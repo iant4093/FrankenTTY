@@ -182,7 +182,12 @@ describe('frankentty MCP server: protocol', () => {
       platform: 'darwin',
       osRelease: '24.6.0',
     });
-    expect(oldMac.structuredContent).toMatchObject({ colorDepth: 8, unicode: false, braille: false });
+    // The last detection step is Node's getColorDepth(), which on a Windows host reads the real
+    // console (24-bit on Windows 10+) instead of the emulated env, so only the Unicode rules are
+    // host-independent there.
+    expect(oldMac.structuredContent).toMatchObject(
+      process.platform === 'win32' ? { unicode: false, braille: false } : { colorDepth: 8, unicode: false, braille: false },
+    );
 
     const linuxConsole = await client.call('frankentty_terminal_caps', {
       env: { COLORTERM: 'truecolor', TERM: 'linux', LC_ALL: 'C.UTF-8' },
