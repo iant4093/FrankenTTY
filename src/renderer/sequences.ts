@@ -143,3 +143,105 @@ export function writeSgrRgb(
   buf[p++] = 0x6d; // m
   return p;
 }
+
+// ---------------------------------------------------------------------------
+// Compressing-encoder writers (task 3.1). Same rules: no allocation, caller owns room.
+// ---------------------------------------------------------------------------
+
+/** Number of ASCII digits of an integer 0..255. */
+export function byteDecimalLength(value: number): number {
+  return DEC_LEN[value] ?? 1;
+}
+
+/** Number of ASCII digits of a non-negative integer (at most 9 digits). */
+export function decimalLength(value: number): number {
+  let digits = 1;
+  for (let probe = 10; digits < 9 && value >= probe; probe *= 10) digits++;
+  return digits;
+}
+
+/** Writes `CSI n C` (cursor forward n cells). `n` must be >= 1. Returns the new cursor. */
+export function writeCursorForward(buf: Uint8Array, pos: number, n: number): number {
+  let p = pos;
+  buf[p++] = ESC_BYTE;
+  buf[p++] = CSI_BYTE;
+  p = writeDecimal(buf, p, n);
+  buf[p++] = 0x43; // C
+  return p;
+}
+
+/** Bytes of a code point in UTF-8 (1..4). */
+export function glyphLength(codePoint: number): number {
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  if (codePoint < 0x10000) return 3;
+  return 4;
+}
+
+/** Writes a code point as UTF-8. Returns the new cursor. */
+export function writeGlyph(buf: Uint8Array, pos: number, codePoint: number): number {
+  if (codePoint < 0x80) {
+    buf[pos] = codePoint;
+    return pos + 1;
+  }
+  if (codePoint < 0x800) {
+    buf[pos] = 0xc0 | (codePoint >> 6);
+    buf[pos + 1] = 0x80 | (codePoint & 0x3f);
+    return pos + 2;
+  }
+  if (codePoint < 0x10000) {
+    buf[pos] = 0xe0 | (codePoint >> 12);
+    buf[pos + 1] = 0x80 | ((codePoint >> 6) & 0x3f);
+    buf[pos + 2] = 0x80 | (codePoint & 0x3f);
+    return pos + 3;
+  }
+  buf[pos] = 0xf0 | (codePoint >> 18);
+  buf[pos + 1] = 0x80 | ((codePoint >> 12) & 0x3f);
+  buf[pos + 2] = 0x80 | ((codePoint >> 6) & 0x3f);
+  buf[pos + 3] = 0x80 | (codePoint & 0x3f);
+  return pos + 4;
+}
+
+function writeColorParams(buf: Uint8Array, pos: number, depth: number, background: boolean, value: number): number {
+  let p = pos;
+  if (depth === 24) {
+    buf[p++] = background ? 0x34 : 0x33; // 4 or 3
+    buf[p++] = 0x38; // 8
+    buf[p++] = 0x3b; // ;
+    buf[p++] = 0x32; // 2
+    buf[p++] = 0x3b;
+    p = writeByteDecimal(buf, p, (value >>> 16) & 0xff);
+    buf[p++] = 0x3b;
+    p = writeByteDecimal(buf, p, (value >>> 8) & 0xff);
+    buf[p++] = 0x3b;
+    return writeByteDecimal(buf, p, value & 0xff);
+  }
+  if (depth === 8) {
+    buf[p++] = background ? 0x34 : 0x33;
+    buf[p++] = 0x38;
+    buf[p++] = 0x3b;
+    buf[p++] = 0x35; // 5
+    buf[p++] = 0x3b;
+    return writeByteDecimal(buf, p, value & 0xff);
+  }
+  // 16 colors: 30-37 / 90-97 (foreground), 40-47 / 100-107 (background).
+  const base = value < 8 ? (background ? 40 : 30) : background ? 100 : 90;
+  return writeDecimal(buf, p, base + (value & 7));
+}
+
+/**
+ * Writes one SGR that sets the foreground, the background, or both (`CSI fg ; bg m`).
+ * `depth` is 24 (`value` = packed RGB), 8 (xterm index) or 4 (ANSI index 0..15).
+ * Pass -1 to leave a color out; at least one must be >= 0. The caller guarantees room for
+ * 36 bytes. Returns the new cursor.
+ */
+export function writeSgr(buf: Uint8Array, pos: number, depth: number, fg: number, bg: number): number {
+  let p = pos;
+  buf[p++] = ESC_BYTE;
+  buf[p++] = CSI_BYTE;
+  if (fg >= 0) p = writeColorParams(buf, p, depth, false, fg);
+  if (fg >= 0 && bg >= 0) buf[p++] = 0x3b;
+  if (bg >= 0) p = writeColorParams(buf, p, depth, true, bg);
+  buf[p++] = 0x6d; // m
+  return p;
+}
