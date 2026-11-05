@@ -68,6 +68,14 @@ export async function replayInto(output: string | Uint8Array, cols: number, rows
   return term;
 }
 
+/** Feeds more bytes into an existing emulator and waits until they are parsed. */
+export function feed(term: Emulator, output: string | Uint8Array): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof output === 'string') term.write(output, resolve);
+    else term.write(output, resolve);
+  });
+}
+
 export interface CellInfo {
   char: string;
   /** Packed 0xRRGGBB, or null when the foreground is not a 24-bit color. */
