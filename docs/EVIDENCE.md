@@ -354,3 +354,49 @@ CI on `3ec37c4` failed on windows-latest only: `killNow()` timed out at
 - CI on `0e22fdb`: all four jobs **success**, including windows-latest.
 
 Wave 2 automated exit check met. Hand check (task 2.5) pending.
+
+---
+
+## Wave 3: compression and modes (2026-11-05)
+
+Tasks 3.1, 3.2 and 3.3 ran **in parallel** in three worktrees, against shared
+types architect-opus committed first (`src/renderer/cells.ts`: `CellGrid`,
+`colorDistanceSq`, `ColorMapper`; `src/renderer/luma.ts`). All three merged
+with no conflicts. Suite on `main`: 35 files, 389 tests PASS.
+
+### Task 3.1 review (encoder): PASS
+
+| Check | Result |
+|---|---|
+| P2a framing (1,000 runs, depths 24/8/4) | PASS |
+| P2b first frame ≤ naive bytes and ≤ naive SGRs (1,000) | PASS |
+| P2c `@xterm/headless` round-trip within threshold (300) | PASS |
+| P2d delta sequences: emulator equals screen model, model within threshold of source (200) | PASS |
+| Mutation check: wrong `CSI k C` count; always-equal color compare | both caught by P2c/P2d (shrunk to 1×2 grids) |
+| `encode()` on a random 244×72 frame, threshold 0 (worst case, 17,568 SGRs) | 1.0 ms/frame |
+| `naiveBytes` equals `serializeNaive(...).length` | exact, unit-tested |
+
+Design points: one combined SGR when fg and bg both change; skip runs use
+`CSI k C` unless a no-SGR reprint is shorter; the screen model stores the
+color actually shown, so error never exceeds the threshold.
+
+### Task 3.2 review (Braille, ASCII): PASS
+
+P6 braille and ascii at 1,000 runs each: PASS. Accepted deviation: a block
+with no dot strictly above the rounded mean luma (not only a uniform block)
+draws a space with the mean as background, because Braille `U+2800` would
+draw nothing.
+
+### Task 3.3 review (palettes, color depth): PASS, one spec bug caught
+
+- **PBT catch #3 (spec bug, 2026-11-05):** brief 3.3 specified DMG by luma
+  quartiles. The idempotence property failed: the lightest shade `#9BBC0F`
+  has luma 168, which falls in quartile 2, so a second pass maps it to
+  `#8BAC0F`. DMG now maps to the nearest shade by its own luma (boundaries
+  63|64, 118|119, 160|161), like amber and green.
+- 256 and 16 mappers are exact nearest-color searches (brute-force check over
+  1M samples: no mismatch). Throughput: about 8,200 (256) and 6,500 (16)
+  `map()` calls per ms.
+- Review finding for 3.4: amber and green ramps top out at luma 179 and 196,
+  so every brighter input clips to the peak. Ramps will be respread over the
+  full luma range with white-hot highlights, keeping idempotence.

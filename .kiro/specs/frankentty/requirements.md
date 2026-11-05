@@ -14,7 +14,7 @@ their ID and note the change.
 
 ## 2. CLI and prerequisites
 
-- **REQ-CLI-01:** THE SYSTEM SHALL accept `frankentty <input | --demo [name]>` with flags `--mode halfblock|ascii|braille`, `--palette truecolor|amber|green|dmg`, `--fps N` (1-60, default 30), `--color auto|truecolor|256|16`, `--threshold N` (0-100, default chosen by bench), `--cell-aspect N` (1.0-3.0), `--av-offset MS` (-2000..2000), `--quality auto|max`, `--no-audio`, `--loop`, `--bench`, `--frames N` (bench only), `--version`, `--help`.
+- **REQ-CLI-01:** THE SYSTEM SHALL accept `frankentty <input | --demo [name]>` with flags `--mode halfblock|ascii|braille`, `--palette truecolor|amber|green|dmg`, `--fps N` (1-60, default 30), `--color auto|truecolor|256|16`, `--threshold N` (0-100, default chosen by bench), `--cell-aspect N` (1.0-3.0), `--av-offset MS` (-2000..2000), `--quality auto|max`, `--no-audio`, `--loop`, `--bench`, `--frames N` (bench only, default 300), `--size COLSxROWS` (bench only, default 120x35), `--json` (bench only), `--version`, `--help`.
 - **REQ-CLI-02:** IF an argument is invalid or unknown, THEN THE SYSTEM SHALL print one line naming the argument and the allowed values to stderr and exit 2 without touching terminal state.
 - **REQ-PREREQ-01:** IF `ffmpeg` or `ffprobe` is not on `PATH`, THEN THE SYSTEM SHALL print the install command for the detected OS and exit 1 before touching terminal state. IF only `ffplay` is missing, THEN THE SYSTEM SHALL warn and play without audio.
 - **REQ-TTY-01:** IF stdout or stdin is not a TTY and `--bench` is not set, THEN THE SYSTEM SHALL print an error and exit 1.
