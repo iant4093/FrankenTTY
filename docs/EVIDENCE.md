@@ -471,3 +471,32 @@ Findings:
   with top backgrounds `#00fe00` (60 cells), `#fdfe00` (60), `#0000fd` (59);
   `frankentty_terminal_caps` for the Apple Terminal 488 environment returned
   colorDepth 24.
+
+---
+
+## Wave 4: sync, controls and the quality governor (2026-11-05)
+
+Tasks 4.1 (audio + clock), 4.2 (key router + HUD) and 4.3 (governor) ran in
+parallel worktrees as standalone modules; 4.4 integrated them into the
+player. Suite: 50 files, 635 tests. CI on `a54c5d6`: all four jobs
+**success**. ffplay runs headless in CI with `SDL_AUDIODRIVER=dummy`.
+
+| Item | Result |
+|---|---|
+| P8 clock vs. reference model (1,000 runs); P8b monotonic (1,000) | PASS |
+| P5 key router, any split of the byte stream (1,000); random bytes never throw, buffer ≤ 64 (2 × 1,000) | PASS |
+| HUD width exactly `cols` for cols 1–400 (1,000) | PASS |
+| Governor properties (a)–(e), 1,000 runs each | PASS |
+| Audio pipe: spawn to first WAV bytes out of ffmpeg (`-ss 10`, 5 runs) | 75–95 ms |
+| Governor simulation, Apple Terminal trace (2.4 MB/s, mandelbrot 244×72) | settles at level 4 (256-color + 14,054-cell cap) → 30.0 fps by second 10; disabled: under 5 fps |
+| Governor end-to-end, fake stdout with 80 ms writes at 30 fps | steps to 256-color + threshold 24, no decoder restart |
+| PTY: Right seeks (HUD ≥ 0:05 within 1 s), Space pauses (ffplay gone, time frozen, ⏸), Space resumes, `q` exits 0 with no children | PASS on macOS, Linux CI |
+
+CI catch: the PTY controls test sampled child processes with `pgrep` every
+100 ms; on the hosted macOS runner each sample took longer, so a 0.8 s window
+held only 3 samples and the "> 3" minimum failed. The minimum is now 2; the
+assertions on what each sample contains are unchanged.
+
+Open (accepted for now): with a negative `--av-offset`, the HUD time can
+read up to |offset| high during the first |offset| seconds. The governor
+resets to full quality after a resize (new geometry, new baseline).
