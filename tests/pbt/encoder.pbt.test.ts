@@ -2,10 +2,11 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { CellGrid, ColorMapper } from '../../src/renderer/cells.ts';
 import { GLYPH_SPACE, GLYPH_UPPER_HALF, colorDistanceSq, createCellGrid } from '../../src/renderer/cells.ts';
+import { create16Mapper, create256Mapper } from '../../src/renderer/color-depth.ts';
 import { createEncoder } from '../../src/renderer/encoder.ts';
 import { SGR_RESET, SYNC_BEGIN, SYNC_END } from '../../src/renderer/sequences.ts';
-import { feed, readCell, replayInto } from '../helpers/emulator.ts';
-import { IDENTITY_MAPPER, STUB_MAPPER_16, STUB_MAPPER_256 } from '../helpers/mappers.ts';
+import { feed, readCell, readPaletteCell, replayInto } from '../helpers/emulator.ts';
+import { IDENTITY_MAPPER } from '../helpers/mappers.ts';
 
 const SYNC_BEGIN_BYTES = Buffer.from(SYNC_BEGIN);
 const FRAME_END_BYTES = Buffer.from(SGR_RESET + SYNC_END);
@@ -59,7 +60,10 @@ function toGrid(d: GridData): CellGrid {
 }
 
 const thresholdArb = fc.integer({ min: 0, max: 40 });
-const mapperArb: fc.Arbitrary<ColorMapper> = fc.constantFrom(IDENTITY_MAPPER, STUB_MAPPER_256, STUB_MAPPER_16);
+// The real mappers from color-depth.ts, so P2a/P2b cover the byte lengths of real 256/16-color SGRs.
+const MAPPER_256 = create256Mapper();
+const MAPPER_16 = create16Mapper();
+const mapperArb: fc.Arbitrary<ColorMapper> = fc.constantFrom(IDENTITY_MAPPER, MAPPER_256, MAPPER_16);
 const offsetArb = fc.record({ offsetX: fc.integer({ min: 0, max: 8 }), offsetY: fc.integer({ min: 0, max: 5 }) });
 
 // P2a: framing of every non-empty output.
@@ -122,6 +126,42 @@ describe('P2c encoder in @xterm/headless', () => {
               } else {
                 const fg = d.fg[i] ?? 0;
                 if (got.char !== '\u2580' || got.fg === null || colorDistanceSq(got.fg, fg) > tsq) return false;
+              }
+            }
+          }
+          return true;
+        } finally {
+          term.dispose();
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+// P2c at depth 8: the emulator's palette indexes, read back with cell.isFgPalette()/getFgColor(), map
+// (through the 256-color table) to colors within the threshold of the mapped source.
+describe('P2c encoder in @xterm/headless at depth 8', () => {
+  it('shows every glyph, and palette-index fg/bg within the threshold of the mapped grid (exact at threshold 0)', async () => {
+    await fc.assert(
+      fc.asyncProperty(gridDataArb, thresholdArb, offsetArb, async (d, t, off) => {
+        const tsq = t * t;
+        const enc = createEncoder({ cols: d.cols, rows: d.rows, mapper: MAPPER_256, ...off });
+        const term = await replayInto(enc.encode(toGrid(d), tsq), d.cols + off.offsetX, d.rows + off.offsetY + 1);
+        try {
+          for (let y = 0; y < d.rows; y++) {
+            for (let x = 0; x < d.cols; x++) {
+              const i = y * d.cols + x;
+              const got = readPaletteCell(term, off.offsetX + x, off.offsetY + y);
+              const glyph = d.glyph[i] ?? GLYPH_SPACE;
+              const wantBg = MAPPER_256.toRgb(MAPPER_256.map(d.bg[i] ?? 0));
+              if (got.bgIndex === null || colorDistanceSq(MAPPER_256.toRgb(got.bgIndex), wantBg) > tsq) return false;
+              if (glyph === GLYPH_SPACE) {
+                if (!isSpace(got.char)) return false;
+              } else {
+                const wantFg = MAPPER_256.toRgb(MAPPER_256.map(d.fg[i] ?? 0));
+                if (got.char !== '\u2580' || got.fgIndex === null) return false;
+                if (colorDistanceSq(MAPPER_256.toRgb(got.fgIndex), wantFg) > tsq) return false;
               }
             }
           }

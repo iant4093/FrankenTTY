@@ -51,10 +51,4 @@ describe('main (non-TTY)', () => {
     expect(r.stderr).not.toContain('\x1b');
     expect(r.stderr.trimEnd().split('\n')).toHaveLength(1);
   });
-
-  it('--bench works without a TTY and says it is not implemented yet', () => {
-    const r = runMain(['--demo', '--bench']);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('bench: not implemented yet\n');
-  });
 });

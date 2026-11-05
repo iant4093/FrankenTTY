@@ -1,12 +1,16 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { HELP_TEXT, VERSION, parseArgs } from './cli/args.ts';
+import { release } from 'node:os';
+import { BenchError, formatBenchJson, formatBenchText, runBench } from './bench/bench.ts';
+import { DEFAULT_BENCH_SIZE, DEFAULT_THRESHOLD, HELP_TEXT, VERSION, parseArgs } from './cli/args.ts';
 import type { Options } from './cli/args.ts';
 import { demoMetadata, demoVideoInputArgs, getDemo } from './ingest/demo.ts';
 import type { MediaInfo } from './ingest/media-info.ts';
 import { ProbeError, probe as probeInput } from './ingest/probe.ts';
 import { createPlayer } from './player/controller.ts';
-import { installCommand, resolveCellAspect, runProbe } from './term/capabilities.ts';
+import { effectiveMode } from './player/pipeline.ts';
+import { DEFAULT_CELL_ASPECT } from './renderer/geometry.ts';
+import { detectColorDepth, detectUnicode, installCommand, resolveCellAspect, runProbe } from './term/capabilities.ts';
 import { createScreen, installExitTraps } from './term/screen.ts';
 
 const TOOL_CHECK_TIMEOUT_MS = 5000;
@@ -54,6 +58,54 @@ async function resolveMedia(options: Options): Promise<Media> {
   return { info: await probeInput(input), inputArgs: ['-i', input] };
 }
 
+/** Prints the install hint and returns 1 when ffmpeg or ffprobe is missing (REQ-PREREQ-01); else returns null. */
+async function missingToolsExit(): Promise<number | null> {
+  const [hasFfmpeg, hasFfprobe] = await Promise.all([toolAvailable('ffmpeg'), toolAvailable('ffprobe')]);
+  if (hasFfmpeg && hasFfprobe) return null;
+  const missing = [hasFfmpeg ? null : 'ffmpeg', hasFfprobe ? null : 'ffprobe'].filter((t) => t !== null);
+  console.error(
+    `frankentty: ${missing.join(' and ')} not found on PATH. Install FFmpeg with: ${installCommand(process.platform, readOsRelease())}`,
+  );
+  return 1;
+}
+
+/** Node's color depth for stdout; 1 (no color) when stdout is not a TTY. */
+function nodeColorDepth(): number {
+  return typeof process.stdout.getColorDepth === 'function' ? process.stdout.getColorDepth() : 1;
+}
+
+/** `--bench`: headless, no TTY. Prints the report to stdout; any failure is one stderr line and exit 1. */
+async function runBenchCommand(options: Options): Promise<number> {
+  const missing = await missingToolsExit();
+  if (missing !== null) return missing;
+  try {
+    const media = await resolveMedia(options);
+    const size = options.size ?? DEFAULT_BENCH_SIZE;
+    const report = await runBench({
+      source: options.demo ?? options.input ?? '',
+      media: media.info,
+      inputArgs: media.inputArgs,
+      isFile: media.info.source === 'file',
+      frames: options.frames ?? 300,
+      cols: size.cols,
+      rows: size.rows,
+      fps: options.fps,
+      cellAspect: options.cellAspect ?? DEFAULT_CELL_ASPECT,
+      mode: options.mode,
+      palette: options.palette,
+      // Benchmarks do not depend on the environment: `auto` means truecolor here.
+      depth: options.color === 'auto' ? 24 : detectColorDepth({}, process.platform, '', 1, options.color),
+      threshold: options.threshold ?? DEFAULT_THRESHOLD,
+    });
+    process.stdout.write(options.json ? formatBenchJson(report) : formatBenchText(report));
+    return 0;
+  } catch (err) {
+    if (!(err instanceof ProbeError) && !(err instanceof BenchError)) throw err;
+    console.error(`frankentty: ${err.message.split('\n')[0]}`);
+    return 1;
+  }
+}
+
 /** Returns an exit code for early exits. The interactive path exits the process itself. */
 async function run(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
@@ -71,28 +123,15 @@ async function run(argv: string[]): Promise<number> {
     process.stdout.write(`${VERSION}\n`);
     return 0;
   }
-  if (options.bench) {
-    process.stdout.write('bench: not implemented yet\n');
-    return 0;
-  }
+  if (options.bench) return runBenchCommand(options);
 
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     console.error('frankentty: stdin and stdout must be a terminal; use --bench for headless runs');
     return 1;
   }
 
-  const [hasFfmpeg, hasFfprobe, hasFfplay] = await Promise.all([
-    toolAvailable('ffmpeg'),
-    toolAvailable('ffprobe'),
-    toolAvailable('ffplay'),
-  ]);
-  if (!hasFfmpeg || !hasFfprobe) {
-    const missing = [hasFfmpeg ? null : 'ffmpeg', hasFfprobe ? null : 'ffprobe'].filter((t) => t !== null);
-    console.error(
-      `frankentty: ${missing.join(' and ')} not found on PATH. Install FFmpeg with: ${installCommand(process.platform, readOsRelease())}`,
-    );
-    return 1;
-  }
+  const [missing, hasFfplay] = await Promise.all([missingToolsExit(), toolAvailable('ffplay')]);
+  if (missing !== null) return missing;
   if (!hasFfplay && !options.noAudio) {
     console.error('frankentty: warning: ffplay not found on PATH, playing without audio');
   }
@@ -111,6 +150,7 @@ async function run(argv: string[]): Promise<number> {
   screen.enter();
 
   const probe = await runProbe(process.stdin, process.stdout);
+  const unicode = detectUnicode(process.env, process.platform);
   const player = createPlayer({
     stdout: process.stdout,
     stdin: process.stdin,
@@ -121,6 +161,11 @@ async function run(argv: string[]): Promise<number> {
     fps: options.fps,
     cellAspect: resolveCellAspect(options.cellAspect, probe.cellAspect).value,
     loop: options.loop,
+    // REQ-CAP-03: no UTF-8 locale -> ASCII only; no Braille support -> half-block, silently.
+    mode: effectiveMode(options.mode, unicode.unicode, unicode.braille),
+    palette: options.palette,
+    depth: detectColorDepth(process.env, process.platform, release(), nodeColorDepth(), options.color),
+    threshold: options.threshold ?? DEFAULT_THRESHOLD,
   });
   const code = await player.start();
   screen.restore();

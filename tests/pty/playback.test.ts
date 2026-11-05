@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ASCII_RAMP } from '../../src/renderer/ascii.ts';
+import { AMBER_RAMP } from '../../src/renderer/palette.ts';
 import { ALT_ON, RESTORE_SEQUENCE, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { readCell, replayInto } from '../helpers/emulator.ts';
 
@@ -90,11 +92,27 @@ function makeVideo(file: string, seconds: number): void {
   throw new Error('ffmpeg could not encode the test video');
 }
 
+/** A moving test pattern. A static source writes one frame and then nothing (the encoder skips unchanged frames). */
+function makeMovingVideo(file: string, seconds: number): void {
+  const input = `testsrc2=size=320x180:rate=30:duration=${String(seconds)}`;
+  for (const codec of ['libx264', 'mpeg4']) {
+    const r = spawnSync(
+      'ffmpeg',
+      ['-v', 'error', '-y', '-f', 'lavfi', '-i', input, '-c:v', codec, '-pix_fmt', 'yuv420p', file],
+      { stdio: 'ignore' },
+    );
+    if (r.status === 0) return;
+  }
+  throw new Error('ffmpeg could not encode the moving test video');
+}
+
 describe.skipIf(!canRun)('playback in a PTY', () => {
   let dir = '';
   let red3 = '';
   let red5 = '';
   let red2 = '';
+  let moving5 = '';
+  let moving2 = '';
 
   beforeAll(() => {
     dir = mkdtempSync(path.join(os.tmpdir(), 'frankentty-playback-'));
@@ -104,6 +122,10 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     makeVideo(red3, 3);
     makeVideo(red5, 5);
     makeVideo(red2, 2);
+    moving5 = path.join(dir, 'moving5.mp4');
+    moving2 = path.join(dir, 'moving2.mp4');
+    makeMovingVideo(moving5, 5);
+    makeMovingVideo(moving2, 2);
   });
 
   afterAll(() => {
@@ -119,15 +141,14 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     const term = await replayInto(beforeRestore(r.output), 80, 24);
     try {
       expect(term.buffer.active.type).toBe('alternate');
+      // A solid color is drawn as a space with only a background change (REQ-RENDER-03).
       const center = readCell(term, 40, 11);
-      expect(center.char).toBe('\u2580');
-      for (const color of [center.fg, center.bg]) {
-        expect(color).not.toBeNull();
-        const c = color ?? 0;
-        expect(Math.abs((c >> 16) - 255)).toBeLessThanOrEqual(16);
-        expect(Math.abs(((c >> 8) & 255) - 0)).toBeLessThanOrEqual(16);
-        expect(Math.abs((c & 255) - 0)).toBeLessThanOrEqual(16);
-      }
+      expect(center.char === ' ' || center.char === '').toBe(true);
+      expect(center.bg).not.toBeNull();
+      const c = center.bg ?? 0;
+      expect(Math.abs((c >> 16) - 255)).toBeLessThanOrEqual(16);
+      expect(Math.abs(((c >> 8) & 255) - 0)).toBeLessThanOrEqual(16);
+      expect(Math.abs((c & 255) - 0)).toBeLessThanOrEqual(16);
       expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
     } finally {
       term.dispose();
@@ -142,7 +163,8 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
   });
 
   it('paces a 30 fps source at about 30 frames per second', () => {
-    const r = runInPty([red5], { timeout: 15, events: [{ at: 3.8, hex: '71' }] });
+    // A moving source: every frame differs, so every frame is written. A static one would be skipped.
+    const r = runInPty([moving5], { timeout: 15, events: [{ at: 3.8, hex: '71' }] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
     const first = r.frameTimes[0];
@@ -159,7 +181,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
   });
 
   it('exits 0 by itself at the end of a 2 s file and restores the terminal', async () => {
-    const r = runInPty([red2], { timeout: 4, events: [] });
+    const r = runInPty([moving2], { timeout: 4, events: [] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
     expect(r.elapsedSec).toBeLessThan(4.5);
@@ -199,8 +221,8 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     const term = await replayInto(body, 100, 30);
     try {
       const center = readCell(term, 50, 14);
-      expect(center.char).toBe('\u2580');
-      expect(Math.abs(((center.fg ?? 0) >> 16) - 255)).toBeLessThanOrEqual(16);
+      expect(center.char === ' ' || center.char === '').toBe(true);
+      expect(Math.abs(((center.bg ?? 0) >> 16) - 255)).toBeLessThanOrEqual(16);
       expect(term.buffer.active.getLine(29)?.translateToString(true)).toBe('');
     } finally {
       term.dispose();
@@ -229,5 +251,81 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     } finally {
       state.dispose();
     }
+  });
+
+  describe('modes and palettes (--demo mandelbrot, 1 s)', () => {
+    async function playOneSecond(extra: string[]) {
+      const r = runInPty(['--demo', 'mandelbrot', ...extra], { timeout: 15, events: [{ at: 1.6, hex: '71' }] });
+      expect(r.timedOut).toBe(false);
+      expect(r.exitCode).toBe(0);
+      expect(r.frameTimes.length).toBeGreaterThan(5);
+      expect(r.output.endsWith(RESTORE_SEQUENCE)).toBe(true);
+      return replayInto(beforeRestore(r.output), 80, 24);
+    }
+
+    it('--mode braille draws only Braille glyphs or spaces, and some dots', async () => {
+      const term = await playOneSecond(['--mode', 'braille']);
+      try {
+        let dots = 0;
+        let cells = 0;
+        for (let y = 0; y < 23; y++) {
+          for (let x = 0; x < 80; x++) {
+            const ch = readCell(term, x, y).char;
+            const cp = ch === '' ? 0x20 : (ch.codePointAt(0) ?? 0);
+            expect(cp === 0x20 || (cp >= 0x2800 && cp <= 0x28ff)).toBe(true);
+            if (cp > 0x2800) dots++;
+            if (readCell(term, x, y).bg !== null) cells++;
+          }
+        }
+        expect(cells).toBeGreaterThan(80 * 15);
+        expect(dots).toBeGreaterThan(0);
+        expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
+      } finally {
+        term.dispose();
+      }
+    });
+
+    it('--mode ascii draws only characters of the luma ramp, and some of them', async () => {
+      const term = await playOneSecond(['--mode', 'ascii']);
+      try {
+        let inked = 0;
+        for (let y = 0; y < 23; y++) {
+          for (let x = 0; x < 80; x++) {
+            const ch = readCell(term, x, y).char;
+            expect(ch === '' || ASCII_RAMP.includes(ch)).toBe(true);
+            if (ch !== '' && ch !== ' ') inked++;
+          }
+        }
+        expect(inked).toBeGreaterThan(0);
+        expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
+      } finally {
+        term.dispose();
+      }
+    });
+
+    it('--palette amber paints every colored cell with an amber ramp entry', async () => {
+      const term = await playOneSecond(['--palette', 'amber']);
+      try {
+        let colored = 0;
+        let halfBlocks = 0;
+        for (let y = 0; y < 23; y++) {
+          for (let x = 0; x < 80; x++) {
+            const c = readCell(term, x, y);
+            if (c.bg !== null) {
+              colored++;
+              expect(AMBER_RAMP).toContain(c.bg);
+            }
+            if (c.char === '\u2580') {
+              halfBlocks++;
+              expect(AMBER_RAMP).toContain(c.fg);
+            }
+          }
+        }
+        expect(colored).toBeGreaterThan(80 * 15);
+        expect(halfBlocks).toBeGreaterThan(0);
+      } finally {
+        term.dispose();
+      }
+    });
   });
 });

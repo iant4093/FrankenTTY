@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { createPlayer } from '../../src/player/controller.ts';
-import type { PlayerStdin, PlayerStdout } from '../../src/player/controller.ts';
+import type { PlayerDeps, PlayerStdin, PlayerStdout } from '../../src/player/controller.ts';
 import { CLEAR, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import type { Screen } from '../../src/term/screen.ts';
 
@@ -78,7 +78,13 @@ function lavfi(marker: string, seconds: number | null): string[] {
   return ['-f', 'lavfi', '-i', `testsrc2=size=160x90:rate=30${duration}`, '-metadata', `title=${marker}`];
 }
 
-function setup(opts: { cols?: number; rows?: number; inputArgs: string[]; loop?: boolean }) {
+function setup(opts: {
+  cols?: number;
+  rows?: number;
+  inputArgs: string[];
+  loop?: boolean;
+  extra?: Partial<PlayerDeps>;
+}) {
   const stdout = new FakeStdout(opts.cols ?? 40, opts.rows ?? 12);
   const stdin = new FakeStdin();
   const { screen, cleanups } = fakeScreen();
@@ -92,6 +98,7 @@ function setup(opts: { cols?: number; rows?: number; inputArgs: string[]; loop?:
     fps: 30,
     cellAspect: 2,
     loop: opts.loop ?? false,
+    ...opts.extra,
   });
   return { stdout, stdin, screen, cleanups, player };
 }
@@ -238,6 +245,67 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     const message = player.lastError();
     expect(message).not.toBeNull();
     expect(message?.split('\n')).toHaveLength(1);
+  });
+
+  it('writes nothing for frames that do not change the screen, and counts them', async () => {
+    const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
+    const { stdout, stdin, player } = setup({ inputArgs: still });
+    const result = player.start();
+    expect(await waitFor(() => player.counters().framesUnchanged > 5, STARTUP_MS)).toBe(true);
+    expect(stdout.frames()).toBe(1);
+    const c = player.counters();
+    expect(c.framesRendered).toBe(1);
+    expect(c.bytesWritten).toBeGreaterThan(0);
+    stdin.emit('data', Buffer.from('q'));
+    expect(await result).toBe(0);
+  });
+
+  it('redraws every cell after 10 s even when nothing changed', async () => {
+    const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
+    let offset = 0;
+    const { stdout, stdin, player } = setup({
+      inputArgs: still,
+      extra: { now: () => performance.now() + offset },
+    });
+    const result = player.start();
+    expect(await waitFor(() => player.counters().framesUnchanged > 5, STARTUP_MS)).toBe(true);
+    expect(stdout.frames()).toBe(1);
+    offset = 10_000;
+    expect(await waitFor(() => stdout.frames() === 2, STARTUP_MS)).toBe(true);
+    await sleep(200);
+    expect(stdout.frames()).toBe(2);
+    stdin.emit('data', Buffer.from('q'));
+    expect(await result).toBe(0);
+  });
+
+  it('uses the requested mode: ascii draws ramp characters and no half blocks', async () => {
+    const { stdout, stdin, player } = setup({ inputArgs: lavfi('k', null), extra: { mode: 'ascii' } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 2, STARTUP_MS);
+    stdin.emit('data', Buffer.from('q'));
+    await result;
+    expect(stdout.text()).not.toContain('\u2580');
+    expect(stdout.text()).toMatch(/[.:\-=+*#%@]/);
+  });
+
+  it('uses the requested mode: braille draws Braille glyphs', async () => {
+    const { stdout, stdin, player } = setup({ inputArgs: lavfi('l', null), extra: { mode: 'braille' } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 2, STARTUP_MS);
+    stdin.emit('data', Buffer.from('q'));
+    await result;
+    expect(stdout.text()).toMatch(/[\u2801-\u28ff]/);
+    expect(stdout.text()).not.toContain('\u2580');
+  });
+
+  it('uses the requested color depth: 256-color sequences, no 24-bit ones', async () => {
+    const { stdout, stdin, player } = setup({ inputArgs: lavfi('m', null), extra: { depth: 8 } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 2, STARTUP_MS);
+    stdin.emit('data', Buffer.from('q'));
+    await result;
+    expect(stdout.text()).toMatch(/\x1b\[(38|48);5;\d+/);
+    expect(stdout.text()).not.toMatch(/\x1b\[[\d;]*[34]8;2;/);
   });
 
   it('refuses to start twice', async () => {

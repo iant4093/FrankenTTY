@@ -6,14 +6,16 @@ import { performance } from 'node:perf_hooks';
 import { createDecoder } from '../ingest/decoder.ts';
 import type { Decoder, DecoderEndInfo } from '../ingest/decoder.ts';
 import type { MediaInfo } from '../ingest/media-info.ts';
-import { downsampleHalfblock } from '../renderer/downsample.ts';
+import { DEFAULT_THRESHOLD } from '../cli/args.ts';
+import type { Mode, Palette } from '../cli/args.ts';
+import type { ColorDepth } from '../renderer/cells.ts';
 import { computeGeometry } from '../renderer/geometry.ts';
 import type { Geometry } from '../renderer/geometry.ts';
-import { createHalfblockSerializer } from '../renderer/halfblock.ts';
-import type { HalfblockSerializer } from '../renderer/halfblock.ts';
 import { CLEAR } from '../renderer/sequences.ts';
 import { drawCentered } from '../term/screen.ts';
 import type { Screen } from '../term/screen.ts';
+import { createPipeline } from './pipeline.ts';
+import type { Pipeline } from './pipeline.ts';
 
 export interface PlayerStdout {
   readonly columns: number;
@@ -45,13 +47,23 @@ export interface PlayerDeps {
   /** Cell height / width. Clamped to [1, 3] before geometry is computed. */
   cellAspect: number;
   loop: boolean;
+  /** Cell builder. Default `halfblock`. Capability gates (REQ-CAP-03) are applied by the caller. */
+  mode?: Mode;
+  /** Default `truecolor`. */
+  palette?: Palette;
+  /** Output color depth. Default 24. */
+  depth?: ColorDepth;
+  /** Color merge threshold 0..100. Default `DEFAULT_THRESHOLD`. */
+  threshold?: number;
   /** Monotonic clock in milliseconds. Default: `performance.now`. */
   now?: () => number;
 }
 
 export interface PlayerCounters {
-  /** Frames serialized and written. */
+  /** Frames encoded and written (non-empty output). */
   framesRendered: number;
+  /** Frames encoded to an empty buffer because nothing on screen changed. Nothing was written. */
+  framesUnchanged: number;
   /** Frames taken from the decoder but never shown (late, or skipped by backpressure). */
   framesDropped: number;
   /** Ticks where a frame was due but stdout could not take it. */
@@ -73,6 +85,8 @@ const KEY_CTRL_C = 0x03;
 const RESIZE_DEBOUNCE_MS = 150;
 const MIN_CELL_ASPECT = 1;
 const MAX_CELL_ASPECT = 3;
+/** Full redraw interval: repairs any drift between the screen model and the terminal. */
+const FULL_REDRAW_MS = 10_000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
@@ -86,8 +100,18 @@ export function createPlayer(deps: PlayerDeps): Player {
   const now = deps.now ?? ((): number => performance.now());
   const intervalMs = 1000 / fps;
   const cellAspect = Math.min(MAX_CELL_ASPECT, Math.max(MIN_CELL_ASPECT, deps.cellAspect));
+  const mode = deps.mode ?? 'halfblock';
+  const palette = deps.palette ?? 'truecolor';
+  const depth = deps.depth ?? 24;
+  const threshold = deps.threshold ?? DEFAULT_THRESHOLD;
 
-  const counters: PlayerCounters = { framesRendered: 0, framesDropped: 0, ticksSkipped: 0, bytesWritten: 0 };
+  const counters: PlayerCounters = {
+    framesRendered: 0,
+    framesUnchanged: 0,
+    framesDropped: 0,
+    ticksSkipped: 0,
+    bytesWritten: 0,
+  };
   let errorText: string | null = null;
   let started = false;
 
@@ -116,8 +140,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
         let geometry: Geometry;
-        let serializer: HalfblockSerializer | null = null;
-        let halfblockPixels = new Uint8Array(0);
+        let pipeline: Pipeline | null = null;
+        let lastFullRedraw = 0;
 
         const position = (): number => baseSec + shown / fps;
 
@@ -156,11 +180,20 @@ export function createPlayer(deps: PlayerDeps): Player {
             cellAspect,
           });
           if (geometry.renderCols === 0 || geometry.renderRows === 0) {
-            serializer = null;
-            halfblockPixels = new Uint8Array(0);
+            pipeline = null;
           } else {
-            serializer = createHalfblockSerializer(geometry.renderCols, geometry.renderRows);
-            halfblockPixels = new Uint8Array(geometry.halfblockWidth * geometry.halfblockHeight * 3);
+            // A new geometry gets a new pipeline: empty screen model, so the first frame is a full redraw.
+            pipeline = createPipeline({
+              cols: geometry.renderCols,
+              rows: geometry.renderRows,
+              offsetX: geometry.offsetX,
+              offsetY: geometry.offsetY,
+              mode,
+              palette,
+              depth,
+              threshold,
+            });
+            lastFullRedraw = now();
           }
         };
 
@@ -221,9 +254,17 @@ export function createPlayer(deps: PlayerDeps): Player {
         };
 
         const render = (frame: Uint8Array): void => {
-          if (serializer === null) return;
-          downsampleHalfblock(frame, geometry.decodeWidth, geometry.decodeHeight, halfblockPixels);
-          const bytes = serializer.serializeNaive(halfblockPixels, geometry.offsetX, geometry.offsetY);
+          if (pipeline === null) return;
+          const t = now();
+          if (t - lastFullRedraw >= FULL_REDRAW_MS) {
+            pipeline.invalidate();
+            lastFullRedraw = t;
+          }
+          const bytes = pipeline.render(frame);
+          if (bytes.length === 0) {
+            counters.framesUnchanged++;
+            return;
+          }
           stdout.write(bytes);
           counters.framesRendered++;
           counters.bytesWritten += bytes.length;
@@ -251,7 +292,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           }
 
           if (last !== null) {
-            // The serializer reuses one buffer, so never write while the stream still holds the last one.
+            // The encoder reuses one buffer, so never write while the stream still holds the last one.
             if (stdout.writableNeedDrain || (stdout.writableLength ?? 0) > 0) {
               counters.ticksSkipped++;
               counters.framesDropped += taken;
@@ -281,7 +322,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           }
           stdout.write(CLEAR);
           layout();
-          if (serializer === null) {
+          if (pipeline === null) {
             baseSec = resumeAt;
             shown = 0;
             showTooSmall();
@@ -316,7 +357,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         stdin.resume();
 
         layout();
-        if (serializer === null) showTooSmall();
+        if (pipeline === null) showTooSmall();
         else begin(0);
       });
     },

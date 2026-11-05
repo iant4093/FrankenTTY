@@ -5,8 +5,10 @@
 // maps to itself (its luma is closest to itself) and ramp lumas are strictly increasing, applying a
 // palette twice equals applying it once, and output luma never decreases when input luma rises.
 //
-// A phosphor's peak is darker than white (amber peak luma 179, green 196, DMG 168), so inputs
-// brighter than the peak clip to the peak entry. That is the cost of exact idempotence.
+// Ramps cover the whole luma range: dark tinted shadows, the full phosphor color at entry 11, then
+// four highlight steps that blend toward a white-hot tone. Entry lumas are roughly evenly spaced over
+// [8, 245], so bright inputs no longer clip to the phosphor peak. A palette test asserts that the
+// lumas span at least [16, 240].
 
 import type { Palette } from '../cli/args.ts';
 import type { CellGrid } from './cells.ts';
@@ -25,16 +27,22 @@ export interface PaletteMap {
   applyGrid(grid: CellGrid): void;
 }
 
-/** 1978 VT100 amber phosphor: 16 steps from tinted near-black to #FFB000. */
+/**
+ * 1978 VT100 amber phosphor: 16 steps. Entries 0-10 are tinted shadows, entry 11 is the full
+ * phosphor color #FFB000 (luma 179), entries 12-15 blend toward white-hot #FFF4D6 (luma 244).
+ */
 export const AMBER_RAMP: readonly number[] = [
-  0x140800, 0x241300, 0x331e00, 0x432a00, 0x533500, 0x624000, 0x724b00, 0x825600,
-  0x916200, 0xa16d00, 0xb17800, 0xc08300, 0xd08e00, 0xe09a00, 0xefa500, 0xffb000,
+  0x0b0800, 0x221700, 0x382600, 0x4e3600, 0x644500, 0x7a5400, 0x906400, 0xa67300,
+  0xbd8200, 0xd39100, 0xe9a100, 0xffb000, 0xffc136, 0xffd26b, 0xffe3a1, 0xfff4d6,
 ];
 
-/** P1 green phosphor: 16 steps from tinted near-black to #33FF33. */
+/**
+ * P1 green phosphor: 16 steps. Entries 0-10 are tinted shadows, entry 11 is the full phosphor
+ * color #33FF33 (luma 196), entries 12-15 blend toward white-hot #D0FFD0 (luma 241).
+ */
 export const GREEN_RAMP: readonly number[] = [
-  0x041004, 0x072007, 0x0a300a, 0x0d400d, 0x115011, 0x146014, 0x177017, 0x1a801a,
-  0x1d8f1d, 0x209f20, 0x23af23, 0x26bf26, 0x2acf2a, 0x2ddf2d, 0x30ef30, 0x33ff33,
+  0x020a02, 0x072107, 0x0b370b, 0x0f4d0f, 0x146314, 0x187a18, 0x1d901d, 0x21a621,
+  0x26bc26, 0x2ad32a, 0x2fe92f, 0x33ff33, 0x5aff5a, 0x82ff82, 0xa9ffa9, 0xd0ffd0,
 ];
 
 /** Game Boy (DMG) LCD shades, darkest to lightest. */

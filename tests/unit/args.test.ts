@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEMOS, HELP_TEXT, VERSION, parseArgs } from '../../src/cli/args.ts';
+import { DEFAULT_THRESHOLD, DEMOS, HELP_TEXT, VERSION, parseArgs } from '../../src/cli/args.ts';
 import type { Options } from '../../src/cli/args.ts';
 
 function ok(argv: string[]): Options {
@@ -32,6 +32,8 @@ describe('parseArgs defaults', () => {
       loop: false,
       bench: false,
       frames: null,
+      size: null,
+      json: false,
       version: false,
       help: false,
     });
@@ -153,6 +155,34 @@ describe('parseArgs numeric ranges', () => {
   it('rejects --frames without --bench', () => {
     expect(fail(['x', '--frames', '10'])).toMatch(/--frames.*--bench/);
   });
+
+  it('--size parses COLSxROWS with --bench', () => {
+    expect(ok(['x', '--bench', '--size', '244x72']).size).toEqual({ cols: 244, rows: 72 });
+    expect(ok(['x', '--bench', '--size', '1x2']).size).toEqual({ cols: 1, rows: 2 });
+    expect(ok(['x', '--bench', '--size', '1000x1000']).size).toEqual({ cols: 1000, rows: 1000 });
+    expect(ok(['x', '--bench']).size).toBeNull();
+  });
+
+  it('--size rejects malformed and out-of-range values, naming the flag', () => {
+    for (const bad of ['120', '120x', 'x35', '120X35', '120x35x1', '0x35', '120x1', '1001x35', '120x1001', '-1x35', 'axb', '']) {
+      expect(fail(['x', '--bench', '--size', bad])).toContain('--size');
+    }
+  });
+
+  it('rejects --size and --json without --bench', () => {
+    expect(fail(['x', '--size', '80x24'])).toMatch(/--size.*--bench/);
+    expect(fail(['x', '--json'])).toMatch(/--json.*--bench/);
+  });
+
+  it('--json is a boolean flag with --bench', () => {
+    expect(ok(['x', '--bench', '--json']).json).toBe(true);
+    expect(ok(['x', '--bench']).json).toBe(false);
+  });
+
+  it('DEFAULT_THRESHOLD is within the allowed range', () => {
+    expect(DEFAULT_THRESHOLD).toBeGreaterThanOrEqual(0);
+    expect(DEFAULT_THRESHOLD).toBeLessThanOrEqual(100);
+  });
 });
 
 describe('parseArgs boolean flags', () => {
@@ -194,6 +224,8 @@ describe('parseArgs help and version', () => {
       '--loop',
       '--bench',
       '--frames',
+      '--size',
+      '--json',
       '--version',
       '--help',
       '--demo',

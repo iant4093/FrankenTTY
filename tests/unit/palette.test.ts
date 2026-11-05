@@ -34,9 +34,22 @@ describe('ramps', () => {
     expect(DMG_RAMP).toEqual([0x0f380f, 0x306230, 0x8bac0f, 0x9bbc0f]);
   });
 
-  it('amber and green end at their phosphor peak', () => {
-    expect(AMBER_RAMP[15]).toBe(0xffb000);
-    expect(GREEN_RAMP[15]).toBe(0x33ff33);
+  it('amber and green reach their full phosphor color at entry 11 and end white-hot', () => {
+    expect(AMBER_RAMP[11]).toBe(0xffb000);
+    expect(GREEN_RAMP[11]).toBe(0x33ff33);
+    expect(AMBER_RAMP[15]).toBe(0xfff4d6);
+    expect(GREEN_RAMP[15]).toBe(0xd0ffd0);
+  });
+
+  it('amber and green lumas span at least [16, 240] with no gap wider than 25', () => {
+    for (const ramp of [AMBER_RAMP, GREEN_RAMP]) {
+      const lumas = ramp.map((c) => lumaPacked(c));
+      expect(Math.min(...lumas)).toBeLessThanOrEqual(16);
+      expect(Math.max(...lumas)).toBeGreaterThanOrEqual(240);
+      for (let i = 1; i < lumas.length; i++) {
+        expect((lumas[i] ?? 0) - (lumas[i - 1] ?? 0)).toBeLessThanOrEqual(25);
+      }
+    }
   });
 
   it('have strictly increasing luma', () => {
@@ -60,11 +73,19 @@ describe('ramps', () => {
 });
 
 describe('amber and green', () => {
-  it('map black to the darkest entry and white to the peak', () => {
-    expect(createPalette('amber').apply(0x000000)).toBe(0x140800);
-    expect(createPalette('amber').apply(0xffffff)).toBe(0xffb000);
-    expect(createPalette('green').apply(0x000000)).toBe(0x041004);
-    expect(createPalette('green').apply(0xffffff)).toBe(0x33ff33);
+  it('map black to the darkest entry and white to the white-hot top entry', () => {
+    expect(createPalette('amber').apply(0x000000)).toBe(0x0b0800);
+    expect(createPalette('amber').apply(0xffffff)).toBe(0xfff4d6);
+    expect(createPalette('green').apply(0x000000)).toBe(0x020a02);
+    expect(createPalette('green').apply(0xffffff)).toBe(0xd0ffd0);
+  });
+
+  it('no longer clip bright grays to the phosphor color', () => {
+    for (const name of ['amber', 'green'] as const) {
+      const p = createPalette(name);
+      expect(p.apply(0xe0e0e0)).not.toBe(p.apply(0xffffff));
+      expect(p.apply(0xc0c0c0)).not.toBe(p.apply(0xe0e0e0));
+    }
   });
 
   it('use every ramp entry across the 0..255 gray range', () => {

@@ -400,3 +400,49 @@ draw nothing.
 - Review finding for 3.4: amber and green ramps top out at luma 179 and 196,
   so every brighter input clips to the peak. Ramps will be respread over the
   full luma range with white-hot highlights, keeping idempotence.
+
+### Task 3.4 review (pipeline, `--bench`, sweep): PASS
+
+Suite: 38 files, 433 tests PASS. New P2c at depth 8 reads xterm palette
+indexes back. Phosphor ramps respread: amber luma 8–244 (white-hot
+`#FFF4D6`), green 7–241 (`#D0FFD0`); idempotence still holds.
+
+**Bench sweep** — `bash scripts/bench.sh`, 2026-11-05, MacBook (arm64),
+Node 26.13.0, FFmpeg 9.0.2, 150 frames per row, half-block. Raw data:
+`docs/evidence/wave3/sweep.jsonl` (102 rows) and `sweep.md`.
+
+Naive baseline = two full SGRs per cell plus a cursor move per row
+(`serializeNaive`). Selected rows at 120×35 (render 120×34):
+
+| Demo | Depth | Threshold | KB/frame (naive 154) | SGR/frame (naive 8,160) | SGR saved | Bytes saved | p95 ms |
+|---|---|---|---|---|---|---|---|
+| mandelbrot | 24-bit | 0 | 137.0 | 3,876 | 52.5% | 11.1% | 0.37 |
+| mandelbrot | 24-bit | **8** | 66.8 | 2,020 | **75.2%** | 56.7% | 0.34 |
+| mandelbrot | 256 | 8 | 20.5 | 965 | 88.2% | 86.7% | 0.71 |
+| life | 24-bit | 8 | 83.4 | 2,649 | 67.5% | 38.7% | 0.45 |
+| cellauto | 24-bit | 8 | 126.6 | 3,934 | 51.8% | 15.5% | 0.42 |
+| gradients | 24-bit | 0 | 97.2 | 2,860 | 64.9% | 35.0% | 0.43 |
+| gradients | 24-bit | **8** | 34.0 | 1,269 | **84.4%** | 77.3% | 0.33 |
+| testsrc2 | 24-bit | 8 | 15.0 | 514 | 93.7% | 89.4% | 0.35 |
+
+At 244×72 (17.6k cells), mandelbrot: 538 KB/frame at threshold 0, 246 KB at
+8, 79 KB at 256-color threshold 8. Render time p95 stays under 3.1 ms in
+every row (under 10% of the 33 ms budget).
+
+Findings:
+
+- **Default threshold set to 8** (architect-opus decision). It is about 1% of
+  the black-to-white redmean distance (≈765), and it more than doubles byte
+  savings on gradients (35% → 77%) and mandelbrot (11% → 57%).
+- **Headline numbers at default settings (24-bit, threshold 8):** 52–94%
+  fewer SGR sequences and 16–89% fewer bytes than the naive encoder,
+  depending on content. The "over 70%" claim in the original video script
+  holds for SGRs on 3 of 5 demos and for bytes on 2 of 5; scripts must cite
+  the per-demo numbers.
+- Compared with the Apple Terminal limits (Wave 0: about 30 fps at
+  135 KB/frame of worst-case gradient content at 120×35), every demo at
+  120×35 and default settings is under 130 KB/frame. At 244×72 only
+  256-color stays under 100 KB/frame on mandelbrot and cellauto, which is
+  what the Wave 4 governor's step 3 is for.
+- `--bench --demo mandelbrot --frames 150 --size 120x35` at the new default:
+  66.78 KB/frame, 75.2% SGRs saved, 47.1% cells skipped, p95 0.29 ms.

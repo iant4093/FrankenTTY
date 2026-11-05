@@ -30,7 +30,7 @@ done task: `docs/EVIDENCE.md`.
 - [x] 3.1 [builder-sonnet] Preallocated serializer, screen model, RLE, solid-space, delta, threshold + P2a-d. (REQ-RENDER-02/03/05/07)
 - [x] 3.2 [builder-sonnet] `downsample.ts`, Braille, ASCII + P6. (REQ-RENDER-06)
 - [x] 3.3 [builder-sonnet] `palette.ts`, 256/16 mapping + P3. (REQ-PAL-01, REQ-RENDER-08)
-- [~] 3.4 [builder-sonnet] `--bench`. (REQ-BENCH-01)
+- [x] 3.4 [builder-sonnet] `--bench`. (REQ-BENCH-01)
 - [ ] 3.5 [architect-opus] Review; record bench numbers in EVIDENCE; project Power `powers/vt100-video/` and MCP config.
 
 ## Wave 4: Sync + TUI (Nov 19-22)

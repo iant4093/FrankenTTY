@@ -93,3 +93,21 @@ export function readCell(term: Emulator, x: number, y: number): CellInfo {
     bg: cell.isBgRGB() ? cell.getBgColor() : null,
   };
 }
+
+export interface PaletteCellInfo {
+  char: string;
+  /** Palette index of the foreground, or null when it is not a palette color. */
+  fgIndex: number | null;
+  bgIndex: number | null;
+}
+
+/** Reads one cell (0-based) and returns its colors as palette indexes (256-color and 16-color modes). */
+export function readPaletteCell(term: Emulator, x: number, y: number): PaletteCellInfo {
+  const cell = term.buffer.active.getLine(y)?.getCell(x);
+  if (cell === undefined) return { char: '', fgIndex: null, bgIndex: null };
+  return {
+    char: cell.getChars(),
+    fgIndex: cell.isFgPalette() ? cell.getFgColor() : null,
+    bgIndex: cell.isBgPalette() ? cell.getBgColor() : null,
+  };
+}
