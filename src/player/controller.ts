@@ -1,20 +1,36 @@
-// Player: owns the frame loop and timers (REQ-SYNC-02, REQ-TERM-02, REQ-GEO-02).
-// Wires ingest -> renderer -> stdout. It holds no escape literals: sequences come from
-// renderer/sequences.ts and the terminal helpers.
+// Player: owns the frame loop and timers (REQ-SYNC-01..05, REQ-UI-01, REQ-HUD-01, REQ-PERF-01,
+// REQ-TERM-02, REQ-GEO-02). Wires ingest -> renderer -> stdout, audio, the presentation clock,
+// the key router, the HUD and the quality governor. It holds no escape literals: sequences come
+// from renderer/sequences.ts and the terminal helpers.
+//
+// Timeline model. One Clock gives the media position. Each decoder starts at the clock position
+// at the time it was created (`decoderStartSec`), so the frame that is due is
+// `floor((clock.position() - decoderStartSec) * fps) + 1` of the current decoder. A tick takes
+// every frame up to that index and renders the newest one (late frames are dropped).
+// Ticks fire at the clock's frame boundaries. While paused no tick runs, so the decoder pipe
+// backs up and ffmpeg waits.
 
 import { performance } from 'node:perf_hooks';
+import { createClock } from '../audio/clock.ts';
+import type { AudioPlayer } from '../audio/player.ts';
 import { createDecoder } from '../ingest/decoder.ts';
 import type { Decoder, DecoderEndInfo } from '../ingest/decoder.ts';
 import type { MediaInfo } from '../ingest/media-info.ts';
-import { DEFAULT_THRESHOLD } from '../cli/args.ts';
-import type { Mode, Palette } from '../cli/args.ts';
+import { DEFAULT_THRESHOLD, PALETTES } from '../cli/args.ts';
+import type { Mode, Palette, Quality } from '../cli/args.ts';
 import type { ColorDepth } from '../renderer/cells.ts';
 import { computeGeometry } from '../renderer/geometry.ts';
 import type { Geometry } from '../renderer/geometry.ts';
-import { CLEAR } from '../renderer/sequences.ts';
+import { createGovernor } from '../renderer/governor.ts';
+import type { Governor, QualitySettings } from '../renderer/governor.ts';
+import { CLEAR, SGR_RESET_BYTES, SYNC_END_BYTES, writeBytes } from '../renderer/sequences.ts';
 import { drawCentered } from '../term/screen.ts';
 import type { Screen } from '../term/screen.ts';
-import { createPipeline } from './pipeline.ts';
+import { createHud } from '../tui/hud.ts';
+import type { Hud, HudState } from '../tui/hud.ts';
+import { createKeyRouter } from '../tui/input.ts';
+import type { KeyEvent, KeyRouter } from '../tui/input.ts';
+import { createPipeline, effectiveMode } from './pipeline.ts';
 import type { Pipeline } from './pipeline.ts';
 
 export interface PlayerStdout {
@@ -55,8 +71,22 @@ export interface PlayerDeps {
   depth?: ColorDepth;
   /** Color merge threshold 0..100. Default `DEFAULT_THRESHOLD`. */
   threshold?: number;
-  /** Monotonic clock in milliseconds. Default: `performance.now`. */
+  /** Monotonic clock in milliseconds. Default: `performance.now`. The audio player must use the same one. */
   now?: () => number;
+  /** Audio output, or null/absent for silent playback (wall-clock pacing). */
+  audio?: AudioPlayer | null;
+  /** `--av-offset` in milliseconds, added to the video position. Default 0. */
+  avOffsetMs?: number;
+  /** Adaptive quality (REQ-PERF-01). Default `auto`. */
+  quality?: Quality;
+  /** Whether the HUD starts visible. Default true. */
+  hudVisible?: boolean;
+  /** UTF-8 locale available (REQ-CAP-03). Default true. Gates the mode cycle. */
+  unicode?: boolean;
+  /** Braille allowed (REQ-CAP-03). Default true. Gates the mode cycle. */
+  braille?: boolean;
+  /** Bytes read from stdin before playback started (for example `probe.passthrough`); handled as keys first. */
+  initialInput?: Uint8Array;
 }
 
 export interface PlayerCounters {
@@ -68,20 +98,38 @@ export interface PlayerCounters {
   framesDropped: number;
   /** Ticks where a frame was due but stdout could not take it. */
   ticksSkipped: number;
-  /** Bytes passed to stdout.write for video frames. */
+  /** Bytes passed to stdout.write for video frames (the HUD is not counted). */
   bytesWritten: number;
+  /** Decoders started: the first one, plus one per seek, resize, loop and cell-cap change. */
+  decoderStarts: number;
+}
+
+export interface PlayerState {
+  paused: boolean;
+  /** Media position in seconds (frozen while paused). */
+  positionSec: number;
+  mode: Mode;
+  palette: Palette;
+  hudVisible: boolean;
+  /** Governor level, 0 = full quality. */
+  qualityLevel: number;
+  depth: ColorDepth;
+  threshold: number;
+  /** Active render-cell cap, or null. */
+  maxCells: number | null;
+  /** Current HUD message, or null. */
+  message: string | null;
 }
 
 export interface Player {
   /** Plays until the end, `q` (exit code 0), Ctrl+C (130) or a decode failure (1). */
   start(): Promise<number>;
   counters(): Readonly<PlayerCounters>;
+  state(): PlayerState;
   /** One-line reason when start() resolved with a decode failure, else null. */
   lastError(): string | null;
 }
 
-const KEY_Q = 0x71;
-const KEY_CTRL_C = 0x03;
 const RESIZE_DEBOUNCE_MS = 150;
 const MIN_CELL_ASPECT = 1;
 const MAX_CELL_ASPECT = 3;
@@ -89,21 +137,57 @@ const MAX_CELL_ASPECT = 3;
 const FULL_REDRAW_MS = 10_000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
+/** Seek keys pressed within this time of each other are applied as one seek (REQ-SYNC-05). */
+const SEEK_COALESCE_MS = 120;
+/** A seek never lands closer than this to the end of a source with a known duration. */
+const SEEK_END_MARGIN_SEC = 0.5;
+/** HUD messages (seek, mode, palette) stay this long. */
+const MESSAGE_MS = 1000;
+/** The HUD is redrawn at least this often while visible: at most 4 times per second. */
+const HUD_INTERVAL_MS = 250;
+const HUD_RETRY_MS = 30;
+const STATS_WINDOW_MS = 1000;
+/** Capacity of the telemetry ring: more than 60 fps for one window, with slack. */
+const STATS_CAPACITY = 256;
+/** A tick that found no frame polls again this soon, so a new decoder's first frame is not delayed a whole interval. */
+const STARVED_POLL_MS = 10;
+const PAUSED_POLL_MS = 10;
+
+const MODE_ORDER: readonly Mode[] = ['halfblock', 'ascii', 'braille'];
 
 function lastLine(text: string): string {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
   return lines[lines.length - 1] ?? '';
 }
 
+/** `m:ss`, or `h:mm:ss` from one hour. */
+export function formatClock(sec: number): string {
+  const total = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const ss = s < 10 ? `0${String(s)}` : String(s);
+  if (h > 0) return `${String(h)}:${m < 10 ? '0' : ''}${String(m)}:${ss}`;
+  return `${String(m)}:${ss}`;
+}
+
+function depthLabel(depth: ColorDepth): HudState['colorLabel'] {
+  if (depth === 24) return '24-bit';
+  return depth === 8 ? '256' : '16';
+}
+
 export function createPlayer(deps: PlayerDeps): Player {
   const { stdout, stdin, screen, mediaInfo, inputArgs, isFile, fps, loop } = deps;
   const now = deps.now ?? ((): number => performance.now());
-  const intervalMs = 1000 / fps;
+  const audio = deps.audio ?? null;
+  const avOffsetMs = deps.avOffsetMs ?? 0;
+  const offsetSec = avOffsetMs / 1000;
   const cellAspect = Math.min(MAX_CELL_ASPECT, Math.max(MIN_CELL_ASPECT, deps.cellAspect));
-  const mode = deps.mode ?? 'halfblock';
-  const palette = deps.palette ?? 'truecolor';
-  const depth = deps.depth ?? 24;
-  const threshold = deps.threshold ?? DEFAULT_THRESHOLD;
+  const baseDepth = deps.depth ?? 24;
+  const baseThreshold = deps.threshold ?? DEFAULT_THRESHOLD;
+  const qualityEnabled = (deps.quality ?? 'auto') === 'auto';
+  const unicode = deps.unicode ?? true;
+  const brailleAllowed = deps.braille ?? true;
 
   const counters: PlayerCounters = {
     framesRendered: 0,
@@ -111,13 +195,41 @@ export function createPlayer(deps: PlayerDeps): Player {
     framesDropped: 0,
     ticksSkipped: 0,
     bytesWritten: 0,
+    decoderStarts: 0,
   };
   let errorText: string | null = null;
   let started = false;
 
+  // State shared between start() and the accessors below.
+  let mode: Mode = deps.mode ?? 'halfblock';
+  let palette: Palette = deps.palette ?? 'truecolor';
+  let hudVisible = deps.hudVisible ?? true;
+  let paused = false;
+  let message: string | null = null;
+  let curDepth: ColorDepth = baseDepth;
+  let curThreshold = baseThreshold;
+  let curMaxCells: number | null = null;
+  let governor: Governor | null = null;
+  const clock = createClock({ now, offsetMs: avOffsetMs });
+
+  /** Media position (audio time): the clock position without the A/V offset. */
+  const mediaPos = (): number => Math.max(0, clock.position() - offsetSec);
+
   return {
     counters: () => counters,
     lastError: () => errorText,
+    state: () => ({
+      paused,
+      positionSec: mediaPos(),
+      mode,
+      palette,
+      hudVisible,
+      qualityLevel: governor?.level() ?? 0,
+      depth: curDepth,
+      threshold: curThreshold,
+      maxCells: curMaxCells,
+      message,
+    }),
 
     start(): Promise<number> {
       if (started) return Promise.reject(new Error('player already started'));
@@ -129,33 +241,75 @@ export function createPlayer(deps: PlayerDeps): Player {
         const live = new Set<Decoder>();
         let decoder: Decoder | null = null;
         let generation = 0;
-        // Position bookkeeping: position = baseSec + shown / fps.
-        let baseSec = 0;
+        /** Clock position at which the current decoder's first frame is due. */
+        let decoderStartSec = 0;
+        /** Frames taken from the current decoder. */
         let shown = 0;
-        let anchor = 0;
-        let tickIndex = 0;
         let ended = false;
         let endInfo: DecoderEndInfo | null = null;
+
         let tickTimer: ReturnType<typeof setTimeout> | null = null;
         let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        let seekTimer: ReturnType<typeof setTimeout> | null = null;
+        let messageTimer: ReturnType<typeof setTimeout> | null = null;
+        let pausedTimer: ReturnType<typeof setTimeout> | null = null;
+        let hudRetryTimer: ReturnType<typeof setTimeout> | null = null;
+        let seekAccum = 0;
 
         let geometry: Geometry;
         let pipeline: Pipeline | null = null;
         let lastFullRedraw = 0;
+        let termCols = DEFAULT_COLS;
+        let termRows = DEFAULT_ROWS;
 
-        const position = (): number => baseSec + shown / fps;
+        // HUD: one state object and one output buffer per geometry.
+        let hud: Hud = createHud(termCols);
+        let hudOut: Buffer = Buffer.allocUnsafe(hud.capacity);
+        let hudDirty = hudVisible;
+        let lastHudAt = -Infinity;
+        const hudState: HudState = {
+          visible: hudVisible,
+          playing: true,
+          positionSec: 0,
+          durationSec: mediaInfo.durationSec,
+          fps: 0,
+          kbPerSec: 0,
+          sgrSavedPct: 0,
+          qualityStep: 0,
+          colorLabel: depthLabel(curDepth),
+          mode,
+          palette,
+          message: null,
+        };
+
+        // Telemetry ring (REQ-HUD-01): one sample per presented frame, newest overwrites oldest.
+        const statTime = new Float64Array(STATS_CAPACITY);
+        const statBytes = new Float64Array(STATS_CAPACITY);
+        const statSgr = new Float64Array(STATS_CAPACITY);
+        const statNaive = new Float64Array(STATS_CAPACITY);
+        let statHead = 0;
+        let statCount = 0;
 
         const killAll = (): void => {
           for (const d of live) d.killNow();
+          audio?.killNow();
+        };
+
+        const clearTimer = (t: ReturnType<typeof setTimeout> | null): null => {
+          if (t !== null) clearTimeout(t);
+          return null;
         };
 
         const finish = (code: number): void => {
           if (finished) return;
           finished = true;
-          if (tickTimer !== null) clearTimeout(tickTimer);
-          if (resizeTimer !== null) clearTimeout(resizeTimer);
-          tickTimer = null;
-          resizeTimer = null;
+          tickTimer = clearTimer(tickTimer);
+          resizeTimer = clearTimer(resizeTimer);
+          seekTimer = clearTimer(seekTimer);
+          messageTimer = clearTimer(messageTimer);
+          pausedTimer = clearTimer(pausedTimer);
+          hudRetryTimer = clearTimer(hudRetryTimer);
+          router.dispose();
           stdout.removeListener('resize', onResize);
           stdin.removeListener('data', onData);
           killAll();
@@ -168,17 +322,131 @@ export function createPlayer(deps: PlayerDeps): Player {
           });
         };
 
-        /** Recomputes geometry and per-geometry buffers from the current terminal size. */
-        const layout = (): void => {
-          const cols = stdout.columns > 0 ? Math.floor(stdout.columns) : DEFAULT_COLS;
-          const rows = stdout.rows > 0 ? Math.floor(stdout.rows) : DEFAULT_ROWS;
-          geometry = computeGeometry({
+        const isBusy = (): boolean => stdout.writableNeedDrain || (stdout.writableLength ?? 0) > 0;
+
+        // ---- HUD ----------------------------------------------------------------------------
+
+        const pushStat = (t: number, bytes: number, sgr: number, naive: number): void => {
+          statTime[statHead] = t;
+          statBytes[statHead] = bytes;
+          statSgr[statHead] = sgr;
+          statNaive[statHead] = naive;
+          statHead = (statHead + 1) % STATS_CAPACITY;
+          if (statCount < STATS_CAPACITY) statCount++;
+        };
+
+        /** Fills hudState from the state and the last second of telemetry. */
+        const refreshHudState = (t: number): void => {
+          const cutoff = t - STATS_WINDOW_MS;
+          let frames = 0;
+          let bytes = 0;
+          let sgr = 0;
+          let naive = 0;
+          for (let i = 0; i < statCount; i++) {
+            const slot = (statHead - 1 - i + STATS_CAPACITY) % STATS_CAPACITY;
+            if ((statTime[slot] as number) <= cutoff) break;
+            frames++;
+            bytes += statBytes[slot] as number;
+            sgr += statSgr[slot] as number;
+            naive += statNaive[slot] as number;
+          }
+          hudState.visible = hudVisible;
+          hudState.playing = !paused;
+          hudState.positionSec = mediaPos();
+          hudState.fps = frames;
+          hudState.kbPerSec = bytes / 1024;
+          hudState.sgrSavedPct = naive > 0 ? Math.max(0, Math.min(100, (1 - sgr / naive) * 100)) : 0;
+          hudState.qualityStep = governor?.level() ?? 0;
+          hudState.colorLabel = depthLabel(curDepth);
+          hudState.mode = mode;
+          hudState.palette = palette;
+          hudState.message = message;
+        };
+
+        const hudDue = (t: number): boolean => (hudVisible ? hudDirty || t - lastHudAt >= HUD_INTERVAL_MS : hudDirty);
+
+        const touchHud = (): void => {
+          if (hudVisible) hudDirty = true;
+        };
+
+        /** Writes the HUD row on its own (key presses, pause). Retries shortly when stdout is busy. */
+        const flushHud = (): void => {
+          if (finished || pipeline === null) return;
+          hudRetryTimer = clearTimer(hudRetryTimer);
+          if (isBusy()) {
+            hudRetryTimer = setTimeout(flushHud, HUD_RETRY_MS);
+            return;
+          }
+          const t = now();
+          refreshHudState(t);
+          const end = hud.render(hudState, hudOut, 0, termRows);
+          stdout.write(hudOut.subarray(0, end));
+          hudDirty = false;
+          lastHudAt = t;
+        };
+
+        const setMessage = (text: string): void => {
+          message = text;
+          messageTimer = clearTimer(messageTimer);
+          messageTimer = setTimeout(() => {
+            messageTimer = null;
+            message = null;
+            touchHud();
+            if (paused) flushHud();
+          }, MESSAGE_MS);
+          touchHud();
+          if (paused) flushHud();
+        };
+
+        // ---- Geometry and quality -----------------------------------------------------------
+
+        const onQualityChange = (settings: QualitySettings): void => {
+          if (pipeline === null) return;
+          curThreshold = settings.threshold;
+          pipeline.setThreshold(settings.threshold);
+          if (settings.depth !== curDepth) {
+            curDepth = settings.depth;
+            pipeline.setDepth(settings.depth);
+          }
+          touchHud();
+          if (settings.maxCells !== curMaxCells) {
+            curMaxCells = settings.maxCells;
+            restartDecoder(false);
+          }
+        };
+
+        /**
+         * Recomputes geometry and per-geometry buffers from the current terminal size.
+         * `freshQuality` also starts a new governor at full quality (terminal resize); a cell-cap
+         * change keeps the running one.
+         */
+        const layout = (freshQuality: boolean): void => {
+          termCols = stdout.columns > 0 ? Math.floor(stdout.columns) : DEFAULT_COLS;
+          termRows = stdout.rows > 0 ? Math.floor(stdout.rows) : DEFAULT_ROWS;
+          const base = {
             srcWidth: mediaInfo.width,
             srcHeight: mediaInfo.height,
-            cols,
-            rows,
+            cols: termCols,
+            rows: termRows,
             cellAspect,
-          });
+          };
+          const uncapped = computeGeometry(base);
+          if (freshQuality) {
+            curThreshold = baseThreshold;
+            curDepth = baseDepth;
+            curMaxCells = null;
+            governor = createGovernor({
+              fps,
+              baseThreshold,
+              baseDepth,
+              baseCells: uncapped.renderCols * uncapped.renderRows,
+              enabled: qualityEnabled,
+            });
+            governor.onChange(onQualityChange);
+          }
+          geometry = curMaxCells === null ? uncapped : computeGeometry({ ...base, maxCells: curMaxCells });
+          hud = createHud(termCols);
+          hudOut = Buffer.allocUnsafe(hud.capacity);
           if (geometry.renderCols === 0 || geometry.renderRows === 0) {
             pipeline = null;
           } else {
@@ -190,30 +458,41 @@ export function createPlayer(deps: PlayerDeps): Player {
               offsetY: geometry.offsetY,
               mode,
               palette,
-              depth,
-              threshold,
+              depth: curDepth,
+              threshold: curThreshold,
             });
+            composite = Buffer.allocUnsafe(pipeline.outputCapacity + hud.capacity + SYNC_END_BYTES.length);
             lastFullRedraw = now();
           }
+          hudDirty = hudVisible;
         };
+        // One frame plus the HUD row, so a tick that shows both still makes one write.
+        let composite: Buffer = Buffer.allocUnsafe(0);
 
         const showTooSmall = (): void => {
-          const cols = stdout.columns > 0 ? Math.floor(stdout.columns) : DEFAULT_COLS;
-          const rows = stdout.rows > 0 ? Math.floor(stdout.rows) : DEFAULT_ROWS;
-          drawCentered(stdout, ['terminal too small'], cols, rows);
+          drawCentered(stdout, ['terminal too small'], termCols, termRows);
         };
 
-        const scheduleTick = (): void => {
-          const delay = Math.max(0, Math.ceil(anchor + tickIndex * intervalMs - now()));
-          tickTimer = setTimeout(tick, delay);
+        // ---- Decoder, ticks ------------------------------------------------------------------
+
+        const scheduleTick = (delayMs: number): void => {
+          tickTimer = clearTimer(tickTimer);
+          tickTimer = setTimeout(tick, delayMs);
         };
 
-        /** Starts a decoder at `startSec` with a new generation and re-anchors the clock. */
-        const begin = (startSec: number): void => {
+        /** Milliseconds until the clock reaches the next frame boundary of the current decoder. */
+        const delayToNextBoundary = (): number => {
+          const elapsed = clock.position() - decoderStartSec;
+          const next = (Math.floor(elapsed * fps) + 1) / fps;
+          return Math.max(1, Math.ceil((next - elapsed) * 1000));
+        };
+
+        /** Starts a decoder at `startSec` with a new generation. Needs a pipeline. */
+        const startDecoder = (startSec: number): void => {
           generation++;
-          baseSec = startSec;
+          counters.decoderStarts++;
+          decoderStartSec = startSec;
           shown = 0;
-          tickIndex = 0;
           ended = false;
           endInfo = null;
           const mine = createDecoder({
@@ -221,7 +500,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             width: geometry.decodeWidth,
             height: geometry.decodeHeight,
             fps,
-            startSec,
+            startSec: Math.max(0, startSec),
             generation,
             isFile,
           });
@@ -232,8 +511,51 @@ export function createPlayer(deps: PlayerDeps): Player {
             ended = true;
             endInfo = info;
           });
-          anchor = now();
-          scheduleTick();
+          if (paused) {
+            pausedTimer = clearTimer(pausedTimer);
+            pausedTimer = setTimeout(pollPausedFrame, 0);
+          } else {
+            scheduleTick(0);
+          }
+        };
+
+        const stopDecoding = (): void => {
+          tickTimer = clearTimer(tickTimer);
+          pausedTimer = clearTimer(pausedTimer);
+          if (decoder !== null) {
+            retire(decoder);
+            decoder = null;
+          }
+        };
+
+        /**
+         * Restarts the decoder at the current clock position with a fresh layout: clears the screen and
+         * rebuilds the geometry. Audio keeps playing. A terminal resize also resets the governor; a
+         * cell-cap change keeps it.
+         */
+        function restartDecoder(freshQuality: boolean): void {
+          const at = clock.position();
+          stopDecoding();
+          stdout.write(CLEAR);
+          layout(freshQuality);
+          if (pipeline === null) showTooSmall();
+          else startDecoder(at);
+        }
+
+        /** Moves the whole timeline: clock, audio and decoder. */
+        const seekTo = (targetSec: number): void => {
+          stopDecoding();
+          clock.seek(targetSec);
+          if (!paused && audio !== null) clock.anchor(audio.play(targetSec));
+          pipeline?.invalidate();
+          if (pipeline !== null) startDecoder(clock.position());
+        };
+
+        /** While paused: decode one frame at the current position and show it. */
+        const repaintPaused = (): void => {
+          if (pipeline === null) return;
+          stopDecoding();
+          startDecoder(clock.position());
         };
 
         const handleEndOfStream = (current: Decoder): void => {
@@ -246,44 +568,82 @@ export function createPlayer(deps: PlayerDeps): Player {
             return;
           }
           if (loop && decoded > 0) {
-            retire(current);
-            begin(0);
+            seekTo(0); // restarts video and audio together
             return;
           }
           finish(0);
         };
 
-        const render = (frame: Uint8Array): void => {
-          if (pipeline === null) return;
+        /**
+         * Renders one frame and writes it, with the HUD row appended when it is due, in a single
+         * write. A frame that changed nothing is not written, but a due HUD still is.
+         */
+        const presentFrame = (frame: Uint8Array): void => {
+          const pl = pipeline;
+          if (pl === null) return;
           const t = now();
           if (t - lastFullRedraw >= FULL_REDRAW_MS) {
-            pipeline.invalidate();
+            pl.invalidate();
             lastFullRedraw = t;
           }
-          const bytes = pipeline.render(frame);
-          if (bytes.length === 0) {
+          const bytes = pl.render(frame);
+          const st = pl.stats;
+          pushStat(t, bytes.length, st.sgrEmitted, st.naiveSgr);
+
+          const withHud = hudDue(t);
+          if (bytes.length === 0 && !withHud) {
             counters.framesUnchanged++;
+            governor?.record(st.renderMs, t);
             return;
           }
-          stdout.write(bytes);
-          counters.framesRendered++;
-          counters.bytesWritten += bytes.length;
+
+          let out: Uint8Array;
+          if (withHud) {
+            refreshHudState(t);
+            let p = 0;
+            if (bytes.length > 0) {
+              // Keep the HUD inside the synchronized update: frame body, HUD row, then the closing bytes.
+              p = bytes.length - SGR_RESET_BYTES.length - SYNC_END_BYTES.length;
+              composite.set(bytes.subarray(0, p), 0);
+            }
+            p = hud.render(hudState, composite, p, termRows);
+            if (bytes.length > 0) p = writeBytes(composite, p, SYNC_END_BYTES);
+            out = composite.subarray(0, p);
+          } else {
+            out = bytes;
+          }
+
+          const w0 = now();
+          stdout.write(out);
+          const w1 = now();
+          if (withHud) {
+            hudDirty = false;
+            lastHudAt = t;
+          }
+          if (bytes.length > 0) {
+            counters.framesRendered++;
+            counters.bytesWritten += bytes.length;
+          } else {
+            counters.framesUnchanged++;
+          }
+          governor?.record(st.renderMs + (w1 - w0), w1);
         };
 
         function tick(): void {
           tickTimer = null;
           const current = decoder;
-          if (finished || current === null) return;
+          if (finished || paused || current === null) return;
 
-          // Tick n shows at least frame n + 1; a late tick catches up to the wall clock.
-          const due = Math.max(tickIndex + 1, Math.floor(((now() - anchor) * fps) / 1000) + 1);
+          const t = now();
+          const elapsed = clock.position() - decoderStartSec;
+          const due = Math.max(1, Math.floor(elapsed * fps) + 1);
           let last: Uint8Array | null = null;
           let taken = 0;
-          let drained = false;
+          let starved = false;
           while (shown < due) {
             const frame = current.takeOldest();
             if (frame === null) {
-              drained = true;
+              starved = true;
               break;
             }
             last = frame;
@@ -293,72 +653,181 @@ export function createPlayer(deps: PlayerDeps): Player {
 
           if (last !== null) {
             // The encoder reuses one buffer, so never write while the stream still holds the last one.
-            if (stdout.writableNeedDrain || (stdout.writableLength ?? 0) > 0) {
+            if (isBusy()) {
               counters.ticksSkipped++;
               counters.framesDropped += taken;
+              governor?.recordSkip(t);
             } else {
-              render(last);
               counters.framesDropped += taken - 1;
+              presentFrame(last);
             }
+          } else if (!isBusy() && hudDue(t)) {
+            flushHud();
           }
 
-          if (drained && ended) {
+          // A governor step may have replaced the decoder (and scheduled its first tick).
+          if (finished || decoder !== current) return;
+
+          if (starved && ended) {
             handleEndOfStream(current);
             return;
           }
-          tickIndex++;
-          scheduleTick();
+          scheduleTick(starved ? Math.min(STARVED_POLL_MS, delayToNextBoundary()) : delayToNextBoundary());
         }
+
+        /** Paused: wait for the first frame of a fresh decoder, show it, and stay paused. */
+        function pollPausedFrame(): void {
+          pausedTimer = null;
+          const current = decoder;
+          if (finished || !paused || current === null) return;
+          if (isBusy()) {
+            pausedTimer = setTimeout(pollPausedFrame, PAUSED_POLL_MS);
+            return;
+          }
+          const frame = current.takeOldest();
+          if (frame !== null) {
+            shown++;
+            touchHud();
+            presentFrame(frame);
+            return;
+          }
+          if (ended) return; // nothing to show at this position
+          pausedTimer = setTimeout(pollPausedFrame, PAUSED_POLL_MS);
+        }
+
+        // ---- Resize --------------------------------------------------------------------------
 
         const applyResize = (): void => {
           resizeTimer = null;
           if (finished) return;
-          const resumeAt = position();
-          if (tickTimer !== null) clearTimeout(tickTimer);
-          tickTimer = null;
-          if (decoder !== null) {
-            retire(decoder);
-            decoder = null;
-          }
-          stdout.write(CLEAR);
-          layout();
-          if (pipeline === null) {
-            baseSec = resumeAt;
-            shown = 0;
-            showTooSmall();
-          } else {
-            begin(resumeAt);
-          }
+          restartDecoder(true);
         };
 
         function onResize(): void {
           if (finished) return;
-          if (resizeTimer !== null) clearTimeout(resizeTimer);
+          resizeTimer = clearTimer(resizeTimer);
           resizeTimer = setTimeout(applyResize, RESIZE_DEBOUNCE_MS);
         }
 
-        function onData(chunk: Uint8Array | string): void {
-          const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk;
-          for (const b of bytes) {
-            if (b === KEY_CTRL_C) {
-              finish(130);
-              return;
+        // ---- Keys ----------------------------------------------------------------------------
+
+        const togglePause = (): void => {
+          if (!paused) {
+            paused = true;
+            clock.pause();
+            if (audio !== null) void audio.stop();
+            tickTimer = clearTimer(tickTimer);
+            // Paused before the first frame appeared: show that frame, as after a paused seek.
+            if (decoder !== null && shown === 0) {
+              pausedTimer = clearTimer(pausedTimer);
+              pausedTimer = setTimeout(pollPausedFrame, 0);
             }
-            if (b === KEY_Q) {
-              finish(0);
-              return;
+            touchHud();
+            if (hudVisible) flushHud();
+            return;
+          }
+          paused = false;
+          pausedTimer = clearTimer(pausedTimer);
+          clock.resume();
+          if (audio !== null) clock.anchor(audio.play(mediaPos()));
+          touchHud();
+          if (decoder !== null) scheduleTick(0);
+          else if (hudVisible) flushHud();
+        };
+
+        const applySeek = (): void => {
+          seekTimer = null;
+          const delta = seekAccum;
+          seekAccum = 0;
+          if (finished || delta === 0) return;
+          const duration = mediaInfo.durationSec;
+          const ceiling = duration === null ? Infinity : Math.max(0, duration - SEEK_END_MARGIN_SEC);
+          const target = Math.min(Math.max(0, mediaPos() + delta), ceiling);
+          seekTo(target);
+          setMessage(`\u00bb ${delta > 0 ? '+' : ''}${String(delta)}s ${formatClock(target)}`);
+        };
+
+        const queueSeek = (deltaSec: number): void => {
+          seekAccum += deltaSec;
+          seekTimer = clearTimer(seekTimer);
+          seekTimer = setTimeout(applySeek, SEEK_COALESCE_MS);
+        };
+
+        const cycleMode = (): void => {
+          const from = MODE_ORDER.indexOf(mode);
+          for (let step = 1; step <= MODE_ORDER.length; step++) {
+            const candidate = MODE_ORDER[(from + step) % MODE_ORDER.length] as Mode;
+            if (effectiveMode(candidate, unicode, brailleAllowed) === candidate) {
+              mode = candidate;
+              break;
             }
           }
+          pipeline?.setMode(mode);
+          if (paused) repaintPaused();
+          setMessage(`mode ${mode}`);
+        };
+
+        const cyclePalette = (): void => {
+          palette = PALETTES[(PALETTES.indexOf(palette) + 1) % PALETTES.length] as Palette;
+          pipeline?.setPalette(palette);
+          if (paused) repaintPaused();
+          setMessage(`palette ${palette}`);
+        };
+
+        const onKey = (key: KeyEvent): void => {
+          if (finished) return;
+          switch (key.type) {
+            case 'quit':
+              finish(0);
+              return;
+            case 'interrupt':
+              finish(130);
+              return;
+            case 'toggle-pause':
+              togglePause();
+              return;
+            case 'seek':
+              queueSeek(key.deltaSec);
+              return;
+            case 'cycle-mode':
+              cycleMode();
+              return;
+            case 'cycle-palette':
+              cyclePalette();
+              return;
+            case 'toggle-hud':
+              hudVisible = !hudVisible;
+              hudDirty = true;
+              flushHud();
+              return;
+            case 'escape':
+              return;
+          }
+        };
+
+        const router: KeyRouter = createKeyRouter({ onKey });
+
+        function onData(chunk: Uint8Array | string): void {
+          router.feed(typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk);
         }
 
+        // ---- Start ---------------------------------------------------------------------------
+
         screen.addCleanup(killAll);
+        audio?.onError((text) => {
+          if (!finished) setMessage(`audio: ${text}`);
+        });
         stdout.on('resize', onResize);
         stdin.on('data', onData);
         stdin.resume();
 
-        layout();
+        layout(true);
+        clock.start(0);
+        if (audio !== null) clock.anchor(audio.play(0));
         if (pipeline === null) showTooSmall();
-        else begin(0);
+        else startDecoder(clock.position());
+        // Keys typed before playback started (during the capability probe) act as if typed now.
+        if (deps.initialInput !== undefined && deps.initialInput.length > 0) router.feed(deps.initialInput);
       });
     },
   };

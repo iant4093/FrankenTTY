@@ -154,9 +154,15 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     stdin.emit('data', Buffer.from('q'));
     await result;
     const text = stdout.text();
-    const rows = [...text.matchAll(/\x1b\[(\d+);\d+H/g)].map((m) => Number(m[1]));
-    expect(Math.max(...rows)).toBeLessThanOrEqual(11);
-    expect(Math.min(...rows)).toBeGreaterThanOrEqual(1);
+    // Video cells stay above the HUD row (12). The only thing ever positioned on row 12 is the HUD.
+    const moves = [...text.matchAll(/\x1b\[(\d+);\d+H(\x1b\[0;37;40m)?/g)];
+    const videoRows = moves.filter((m) => m[2] === undefined).map((m) => Number(m[1]));
+    expect(videoRows.length).toBeGreaterThan(0);
+    expect(Math.max(...videoRows)).toBeLessThanOrEqual(11);
+    expect(Math.min(...videoRows)).toBeGreaterThanOrEqual(1);
+    const hudRows = moves.filter((m) => m[2] !== undefined).map((m) => Number(m[1]));
+    expect(hudRows.length).toBeGreaterThan(0);
+    expect(new Set(hudRows)).toEqual(new Set([12]));
   });
 
   it('skips rendering while stdout needs a drain, and counts it', async () => {
@@ -219,8 +225,8 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
       .slice(stdout.writes.lastIndexOf(CLEAR) + 1)
       .map((w) => (typeof w === 'string' ? w : Buffer.from(w).toString('utf8')))
       .join('');
-    const rows = [...after.matchAll(/\x1b\[(\d+);\d+H/g)].map((m) => Number(m[1]));
-    // 60x30 at 16:9: 60 cols x 17 rows, centered in the 29 rows above the HUD.
+    const rows = [...after.matchAll(/\x1b\[(\d+);\d+H(?!\x1b\[0;37;40m)/g)].map((m) => Number(m[1]));
+    // The HUD (row 30, white on black) is excluded. 60x30 at 16:9: 60 cols x 17 rows, centered in the 29 rows above the HUD.
     expect(Math.max(...rows)).toBeGreaterThan(12);
     expect(Math.max(...rows)).toBeLessThanOrEqual(29);
     expect(Math.min(...rows)).toBeGreaterThan(1);

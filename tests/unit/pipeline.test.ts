@@ -210,6 +210,53 @@ describe('createPipeline', () => {
     expect(sizes[2]).toBeLessThan(sizes[1] ?? 0);
   });
 
+  it('setThreshold() applies from the next render and keeps the screen model valid', () => {
+    const f = frame();
+    const p = createPipeline(options({ threshold: 0 }));
+    const lossless = p.render(f).length;
+    const sgr0 = p.stats.sgrEmitted;
+    expect(p.threshold).toBe(0);
+    p.setThreshold(60);
+    expect(p.threshold).toBe(60);
+    // No invalidation: the screen model stays valid. The half-block builder merges more cells now,
+    // so the first render may write the changed ones, and the next identical frame writes nothing.
+    p.render(f);
+    expect(p.render(f).length).toBe(0);
+    p.invalidate();
+    p.render(f);
+    expect(p.stats.sgrEmitted).toBeLessThan(sgr0);
+    expect(lossless).toBeGreaterThan(0);
+  });
+
+  it('setDepth() switches the mapper and invalidates', () => {
+    const f = frame();
+    const p = createPipeline(options());
+    const rgb = text(p.render(f));
+    expect(rgb).toMatch(/\x1b\[[\d;]*[34]8;2;/);
+    expect(p.render(f).length).toBe(0);
+
+    p.setDepth(8);
+    expect(p.depth).toBe(8);
+    const indexed = text(p.render(f));
+    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(indexed).toMatch(/\x1b\[[\d;]*[34]8;5;\d+/);
+    expect(indexed).not.toMatch(/\x1b\[[\d;]*[34]8;2;/);
+    expect(p.render(f).length).toBe(0);
+
+    p.setDepth(4);
+    expect(p.depth).toBe(4);
+    expect(p.render(f).length).toBeGreaterThan(0);
+    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    // Same depth again is a no-op: nothing to redraw.
+    p.setDepth(4);
+    expect(p.render(f).length).toBe(0);
+  });
+
+  it('reports the encoder capacity as the largest possible output', () => {
+    const p = createPipeline(options());
+    expect(p.outputCapacity).toBeGreaterThanOrEqual(p.render(frame()).length);
+  });
+
   it('rejects a frame of the wrong size', () => {
     const p = createPipeline(options());
     expect(() => p.render(new Uint8Array(10))).toThrow();

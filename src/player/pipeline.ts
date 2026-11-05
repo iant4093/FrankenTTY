@@ -15,7 +15,7 @@ import { createCellGrid } from '../renderer/cells.ts';
 import type { ColorDepth } from '../renderer/cells.ts';
 import { createMapper } from '../renderer/color-depth.ts';
 import { createEncoder } from '../renderer/encoder.ts';
-import type { FrameStats } from '../renderer/encoder.ts';
+import type { Encoder, FrameStats } from '../renderer/encoder.ts';
 import { buildHalfblockCells } from '../renderer/halfblock-cells.ts';
 import { createPalette } from '../renderer/palette.ts';
 import type { PaletteMap } from '../renderer/palette.ts';
@@ -47,6 +47,11 @@ export interface Pipeline {
   readonly decodeHeight: number;
   readonly mode: Mode;
   readonly palette: Palette;
+  readonly depth: ColorDepth;
+  /** Current color merge threshold, 0..100. */
+  readonly threshold: number;
+  /** Size in bytes of the encoder's output buffer: the largest render() result. */
+  readonly outputCapacity: number;
   /**
    * Renders one decoded frame. Returns a view into the encoder buffer, valid until the next
    * call; length 0 when nothing on screen changes. The caller must not write it while an earlier
@@ -59,6 +64,10 @@ export interface Pipeline {
   setMode(mode: Mode): void;
   /** Switches the palette. Keeps geometry, invalidates. */
   setPalette(palette: Palette): void;
+  /** Changes the color merge threshold. Takes effect on the next render(); the screen model stays valid. */
+  setThreshold(threshold: number): void;
+  /** Switches the output color depth (new mapper and encoder). Keeps geometry, invalidates. */
+  setDepth(depth: ColorDepth): void;
   /** Stats of the last render(). The object is reused: read it before the next call. */
   readonly stats: Readonly<PipelineStats>;
 }
@@ -74,15 +83,19 @@ export function effectiveMode(requested: Mode, unicode: boolean, braille: boolea
 }
 
 export function createPipeline(options: PipelineOptions): Pipeline {
-  const { cols, rows, offsetX, offsetY, depth } = options;
-  const thresholdSq = options.threshold * options.threshold;
+  const { cols, rows, offsetX, offsetY } = options;
+  let depth = options.depth;
+  let threshold = options.threshold;
+  let thresholdSq = threshold * threshold;
   const decodeWidth = 2 * cols;
   const decodeHeight = 4 * rows;
 
   const grid = createCellGrid(cols, rows);
   // 2x2-averaged pixels for the half-block builder: c x 2r RGB24.
   const work = new Uint8Array(cols * 2 * rows * 3);
-  const encoder = createEncoder({ cols, rows, offsetX, offsetY, mapper: createMapper(depth) });
+  const makeEncoder = (): Encoder => createEncoder({ cols, rows, offsetX, offsetY, mapper: createMapper(depth) });
+  let encoder = makeEncoder();
+  const outputCapacity = encoder.capacity;
   let mode = options.mode;
   let paletteName = options.palette;
   let palette: PaletteMap = createPalette(paletteName);
@@ -97,7 +110,6 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     naiveSgr: 0,
     renderMs: 0,
   };
-  const encoderStats = encoder.stats;
 
   return {
     cols,
@@ -110,6 +122,13 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     get palette() {
       return paletteName;
     },
+    get depth() {
+      return depth;
+    },
+    get threshold() {
+      return threshold;
+    },
+    outputCapacity,
     stats,
     render(decodePixels) {
       const start = performance.now();
@@ -126,6 +145,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       }
       palette.applyGrid(grid);
       const bytes = encoder.encode(grid, thresholdSq);
+      const encoderStats = encoder.stats;
       stats.bytes = encoderStats.bytes;
       stats.sgrEmitted = encoderStats.sgrEmitted;
       stats.cellsWritten = encoderStats.cellsWritten;
@@ -147,6 +167,16 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       paletteName = next;
       palette = createPalette(next);
       encoder.invalidate();
+    },
+    setThreshold(next) {
+      threshold = next;
+      thresholdSq = next * next;
+    },
+    setDepth(next) {
+      if (next === depth) return;
+      depth = next;
+      // The mapper is fixed per encoder, and the screen model holds mapped colors: start afresh.
+      encoder = makeEncoder();
     },
   };
 }

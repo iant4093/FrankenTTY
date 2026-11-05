@@ -9,6 +9,9 @@ import { AMBER_RAMP } from '../../src/renderer/palette.ts';
 import { ALT_ON, RESTORE_SEQUENCE, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { readCell, replayInto } from '../helpers/emulator.ts';
 
+// The bottom row holds the HUD (REQ-GEO-02): it starts with the play symbol.
+const HUD_ROW = /^\u25b6 /;
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const helper = path.join(root, 'tests', 'helpers', 'pty_run.py');
 
@@ -47,7 +50,7 @@ function runInPty(args: string[], opts: { cols?: number; rows?: number; timeout:
     cols: opts.cols ?? 80,
     rows: opts.rows ?? 24,
     timeout: opts.timeout,
-    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor' },
+    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor', SDL_AUDIODRIVER: 'dummy' },
     events: opts.events,
   };
   const startedAt = Date.now();
@@ -132,7 +135,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     if (dir !== '') rmSync(dir, { recursive: true, force: true });
   });
 
-  it('plays a red file, draws it centered, leaves the HUD row blank and restores on q', async () => {
+  it('plays a red file, draws it centered, shows the HUD on the bottom row and restores on q', async () => {
     const r = runInPty([red3], { timeout: 15, events: [{ at: 1.5, hex: '71' }] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
@@ -149,7 +152,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       expect(Math.abs((c >> 16) - 255)).toBeLessThanOrEqual(16);
       expect(Math.abs(((c >> 8) & 255) - 0)).toBeLessThanOrEqual(16);
       expect(Math.abs((c & 255) - 0)).toBeLessThanOrEqual(16);
-      expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
+      expect(term.buffer.active.getLine(23)?.translateToString(true)).toMatch(HUD_ROW);
     } finally {
       term.dispose();
     }
@@ -213,7 +216,8 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     const clear = '\x1b[2J\x1b[H';
     expect(body.split(clear).length - 1).toBeGreaterThanOrEqual(2); // enter + resize
     const afterResize = body.slice(body.lastIndexOf(clear) + clear.length);
-    const rows = [...afterResize.matchAll(/\x1b\[(\d+);\d+H/g)].map((m) => Number(m[1]));
+    // Video cell moves only: the HUD row (30) is positioned with the white-on-black style right after.
+    const rows = [...afterResize.matchAll(/\x1b\[(\d+);\d+H(?!\x1b\[0;37;40m)/g)].map((m) => Number(m[1]));
     expect(rows.length).toBeGreaterThan(0);
     expect(Math.max(...rows)).toBeGreaterThan(24);
     expect(Math.max(...rows)).toBeLessThanOrEqual(29);
@@ -223,7 +227,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       const center = readCell(term, 50, 14);
       expect(center.char === ' ' || center.char === '').toBe(true);
       expect(Math.abs(((center.bg ?? 0) >> 16) - 255)).toBeLessThanOrEqual(16);
-      expect(term.buffer.active.getLine(29)?.translateToString(true)).toBe('');
+      expect(term.buffer.active.getLine(29)?.translateToString(true)).toMatch(HUD_ROW);
     } finally {
       term.dispose();
     }
@@ -279,7 +283,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
         }
         expect(cells).toBeGreaterThan(80 * 15);
         expect(dots).toBeGreaterThan(0);
-        expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
+        expect(term.buffer.active.getLine(23)?.translateToString(true)).toMatch(HUD_ROW);
       } finally {
         term.dispose();
       }
@@ -297,7 +301,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
           }
         }
         expect(inked).toBeGreaterThan(0);
-        expect(term.buffer.active.getLine(23)?.translateToString(true)).toBe('');
+        expect(term.buffer.active.getLine(23)?.translateToString(true)).toMatch(HUD_ROW);
       } finally {
         term.dispose();
       }

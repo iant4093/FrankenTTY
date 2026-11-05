@@ -70,7 +70,7 @@ Options:
   --color <${COLOR_FLAGS.join('|')}>  Color depth (default auto)
   --threshold <0-100>           Color merge threshold
   --cell-aspect <1.0-3.0>       Cell height/width ratio
-  --av-offset <-2000..2000>     Audio/video offset in ms (default 0)
+  --av-offset <-2000..2000>     Show video this many ms ahead of audio; negative = behind (default 0)
   --quality <${QUALITIES.join('|')}>              Adaptive quality (default auto)
   --no-audio                    Play without audio
   --loop                        Restart at the end

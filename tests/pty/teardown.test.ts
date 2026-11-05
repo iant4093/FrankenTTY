@@ -37,7 +37,7 @@ function runInPty(event: { hex: string } | { signal: string }): PtyResult {
     cols: COLS,
     rows: ROWS,
     timeout: 15,
-    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor' },
+    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor', SDL_AUDIODRIVER: 'dummy' },
     events: [{ at: INPUT_AT, ...event }],
   };
   const run = spawnSync('python3', [helper, JSON.stringify(spec)], {
@@ -92,6 +92,6 @@ describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
     expect(state.bufferType).toBe('alternate');
     expect(state.modes[25]).toBe(2); // cursor hidden
     expect(state.modes[7]).toBe(2); // autowrap off
-    expect(state.rows[ROWS - 1]).toBe(''); // HUD row stays blank
+    expect(state.rows[ROWS - 1]).toMatch(/^\u25b6 /); // the bottom row holds the HUD
   });
 });

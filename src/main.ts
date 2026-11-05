@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { release } from 'node:os';
+import { performance } from 'node:perf_hooks';
 import { BenchError, formatBenchJson, formatBenchText, runBench } from './bench/bench.ts';
 import { DEFAULT_BENCH_SIZE, DEFAULT_THRESHOLD, HELP_TEXT, VERSION, parseArgs } from './cli/args.ts';
 import type { Options } from './cli/args.ts';
-import { demoMetadata, demoVideoInputArgs, getDemo } from './ingest/demo.ts';
+import { createAudioPlayer } from './audio/player.ts';
+import { demoAudioInputArgs, demoMetadata, demoVideoInputArgs, getDemo } from './ingest/demo.ts';
 import type { MediaInfo } from './ingest/media-info.ts';
 import { ProbeError, probe as probeInput } from './ingest/probe.ts';
 import { createPlayer } from './player/controller.ts';
@@ -14,6 +16,11 @@ import { detectColorDepth, detectUnicode, installCommand, resolveCellAspect, run
 import { createScreen, installExitTraps } from './term/screen.ts';
 
 const TOOL_CHECK_TIMEOUT_MS = 5000;
+
+/** One time source for the clock, the audio player and the frame loop. */
+function monotonicNow(): number {
+  return performance.now();
+}
 
 /** Runs `<tool> -version` with an argv array and no shell. */
 function toolAvailable(tool: string): Promise<boolean> {
@@ -45,17 +52,19 @@ function readOsRelease(): string | null {
 interface Media {
   info: MediaInfo;
   inputArgs: string[];
+  /** ffmpeg input arguments for the audio decoder. */
+  audioInputArgs: string[];
 }
 
 /** Resolves what to play before the terminal is touched. Throws ProbeError for bad inputs. */
 async function resolveMedia(options: Options): Promise<Media> {
   if (options.demo !== null) {
     const src = getDemo(options.demo);
-    return { info: demoMetadata(src), inputArgs: demoVideoInputArgs(src) };
+    return { info: demoMetadata(src), inputArgs: demoVideoInputArgs(src), audioInputArgs: demoAudioInputArgs(src) };
   }
   const input = options.input;
   if (input === null) throw new ProbeError('no input given');
-  return { info: await probeInput(input), inputArgs: ['-i', input] };
+  return { info: await probeInput(input), inputArgs: ['-i', input], audioInputArgs: ['-i', input] };
 }
 
 /** Prints the install hint and returns 1 when ffmpeg or ffprobe is missing (REQ-PREREQ-01); else returns null. */
@@ -132,9 +141,6 @@ async function run(argv: string[]): Promise<number> {
 
   const [missing, hasFfplay] = await Promise.all([missingToolsExit(), toolAvailable('ffplay')]);
   if (missing !== null) return missing;
-  if (!hasFfplay && !options.noAudio) {
-    console.error('frankentty: warning: ffplay not found on PATH, playing without audio');
-  }
 
   let media: Media;
   try {
@@ -145,31 +151,54 @@ async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
+  // Audio plays when the source has it, ffplay exists and the user did not opt out (REQ-PREREQ-01).
+  if (media.info.hasAudio && !options.noAudio && !hasFfplay) {
+    console.error('frankentty: warning: ffplay not found on PATH, playing without audio');
+  }
+  const useAudio = media.info.hasAudio && !options.noAudio && hasFfplay;
+
   const screen = createScreen(process.stdout, process.stdin);
   installExitTraps(screen);
   screen.enter();
 
-  const probe = await runProbe(process.stdin, process.stdout);
-  const unicode = detectUnicode(process.env, process.platform);
-  const player = createPlayer({
-    stdout: process.stdout,
-    stdin: process.stdin,
-    screen,
-    mediaInfo: media.info,
-    inputArgs: media.inputArgs,
-    isFile: media.info.source === 'file',
-    fps: options.fps,
-    cellAspect: resolveCellAspect(options.cellAspect, probe.cellAspect).value,
-    loop: options.loop,
-    // REQ-CAP-03: no UTF-8 locale -> ASCII only; no Braille support -> half-block, silently.
-    mode: effectiveMode(options.mode, unicode.unicode, unicode.braille),
-    palette: options.palette,
-    depth: detectColorDepth(process.env, process.platform, release(), nodeColorDepth(), options.color),
-    threshold: options.threshold ?? DEFAULT_THRESHOLD,
-  });
-  const code = await player.start();
+  let code: number;
+  let failure: string | null;
+  try {
+    const probe = await runProbe(process.stdin, process.stdout);
+    const unicode = detectUnicode(process.env, process.platform);
+    const audio = useAudio ? createAudioPlayer({ inputArgs: media.audioInputArgs, now: monotonicNow }) : null;
+    const player = createPlayer({
+      stdout: process.stdout,
+      stdin: process.stdin,
+      screen,
+      mediaInfo: media.info,
+      inputArgs: media.inputArgs,
+      isFile: media.info.source === 'file',
+      fps: options.fps,
+      cellAspect: resolveCellAspect(options.cellAspect, probe.cellAspect).value,
+      loop: options.loop,
+      // REQ-CAP-03: no UTF-8 locale -> ASCII only; no Braille support -> half-block, silently.
+      mode: effectiveMode(options.mode, unicode.unicode, unicode.braille),
+      unicode: unicode.unicode,
+      braille: unicode.braille,
+      palette: options.palette,
+      depth: detectColorDepth(process.env, process.platform, release(), nodeColorDepth(), options.color),
+      threshold: options.threshold ?? DEFAULT_THRESHOLD,
+      now: monotonicNow,
+      audio,
+      avOffsetMs: options.avOffset,
+      quality: options.quality,
+      // Keys typed during the capability probe are not lost.
+      initialInput: probe.passthrough,
+    });
+    code = await player.start();
+    failure = player.lastError();
+  } catch (err) {
+    // The screen is active, so restore it and leave: a resumed raw stdin would keep the process alive.
+    failure = (err instanceof Error ? err.message : String(err)).split('\n')[0] ?? 'unexpected error';
+    code = 1;
+  }
   screen.restore();
-  const failure = player.lastError();
   if (failure !== null) console.error(`frankentty: ${failure}`);
   process.exit(code);
 }

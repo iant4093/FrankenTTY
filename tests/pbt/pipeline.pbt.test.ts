@@ -82,3 +82,57 @@ describe('P8 pipeline', () => {
     );
   });
 });
+
+// P8b: setDepth() always forces a full redraw at the new depth, and setThreshold() never does.
+describe('P8b pipeline quality setters', () => {
+  const opArb = fc.oneof(
+    fc.record({ op: fc.constant('depth' as const), depth: fc.constantFrom(24 as const, 8 as const, 4 as const) }),
+    fc.record({ op: fc.constant('threshold' as const), threshold: fc.integer({ min: 0, max: 100 }) }),
+    fc.record({ op: fc.constant('render' as const) }),
+  );
+
+  it('setDepth redraws every cell in the new depth; a repeated identical frame is empty unless a setter ran', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 6 }),
+        fc.integer({ min: 1, max: 4 }),
+        fc.constantFrom<Mode>(...MODES),
+        fc.array(fc.integer({ min: 0, max: 255 }), { minLength: 1, maxLength: 16 }),
+        fc.array(opArb, { minLength: 1, maxLength: 10 }),
+        (cols, rows, mode, seed, ops) => {
+          const pixels = new Uint8Array(cols * 2 * rows * 4 * 3);
+          for (let i = 0; i < pixels.length; i++) pixels[i] = (seed[i % seed.length] ?? 0) ^ ((i * 13) & 255);
+          const p = createPipeline({ cols, rows, offsetX: 0, offsetY: 0, mode, palette: 'truecolor', depth: 24, threshold: 0 });
+          p.render(pixels);
+          let expectFull = false;
+          let thresholdChanged = false;
+          for (const o of ops) {
+            if (o.op === 'depth') {
+              if (o.depth !== p.depth) expectFull = true;
+              p.setDepth(o.depth);
+              if (p.depth !== o.depth) return false;
+            } else if (o.op === 'threshold') {
+              if (o.threshold !== p.threshold) thresholdChanged = true;
+              p.setThreshold(o.threshold);
+              if (p.threshold !== o.threshold) return false;
+            } else {
+              const out = p.render(pixels);
+              if (expectFull) {
+                if (p.stats.cellsWritten !== cols * rows) return false;
+                const text = Buffer.from(out).toString('latin1');
+                const has24 = /\x1b\[[\d;]*[34]8;2;/.test(text);
+                if (has24 !== (p.depth === 24)) return false;
+                expectFull = false;
+              } else if (out.length !== 0 && !thresholdChanged) {
+                return false; // same pixels, same depth, same threshold: nothing changed on screen
+              }
+              thresholdChanged = false;
+            }
+          }
+          return true;
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+});
