@@ -40,5 +40,13 @@
     "revision": 2,
     "fingerprint": "sha256:28b571afa950b796f31c6bff55e319f7e48242219b73ae66d44d623de9c1dc08",
     "source": "sha256:1450dc825eb5b1c1464b3b4843c3216c31dad9fd121396c7a7f416c102fea69b"
+  },
+  "mcpServers": {
+    "frankentty": {
+      "command": "node",
+      "args": [
+        "tools/frankentty-mcp/server.ts"
+      ]
+    }
   }
 }

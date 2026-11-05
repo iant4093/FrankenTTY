@@ -31,7 +31,9 @@ done task: `docs/EVIDENCE.md`.
 - [x] 3.2 [builder-sonnet] `downsample.ts`, Braille, ASCII + P6. (REQ-RENDER-06)
 - [x] 3.3 [builder-sonnet] `palette.ts`, 256/16 mapping + P3. (REQ-PAL-01, REQ-RENDER-08)
 - [x] 3.4 [builder-sonnet] `--bench`. (REQ-BENCH-01)
-- [ ] 3.5 [architect-opus] Review; record bench numbers in EVIDENCE; project Power `powers/vt100-video/` and MCP config.
+- [x] 3.5 [architect-opus] Review; record bench numbers in EVIDENCE; project Power `powers/vt100-video/` and MCP config.
+- [x] 3.6 [builder-sonnet] MCP server `tools/frankentty-mcp/` (bench, probe, render snapshot, terminal caps).
+- [ ] 3.7 [Ian] Hand check in Apple Terminal: compressed playback is smoother than Wave 2 at the same window size.
 
 ## Wave 4: Sync + TUI (Nov 19-22)
 

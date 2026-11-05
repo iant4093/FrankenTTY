@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "vt100-video",
+  "version": "0.1.0",
+  "description": "Render and benchmark video in ANSI/VT100 terminals: escape-sequence rules, FFmpeg raw-pipe recipes, terminal capability detection, and an MCP server that benchmarks the FrankenTTY encoder and snapshots frames through a real terminal emulator core.",
+  "author": { "name": "Ian Truong", "url": "https://github.com/iant4093" },
+  "keywords": [
+    "ansi", "vt100", "escape sequence", "sgr", "truecolor", "256 color", "half-block", "braille",
+    "terminal video", "synchronized output", "decrqm", "ffmpeg", "rawvideo", "rgb24", "frankentty", "bench"
+  ],
+  "homepage": "https://github.com/iant4093/FrankenTTY",
+  "repository": "https://github.com/iant4093/FrankenTTY",
+  "license": "MIT"
+}

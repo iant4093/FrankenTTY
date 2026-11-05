@@ -446,3 +446,28 @@ Findings:
   what the Wave 4 governor's step 3 is for.
 - `--bench --demo mandelbrot --frames 150 --size 120x35` at the new default:
   66.78 KB/frame, 75.2% SGRs saved, 47.1% cells skipped, p95 0.29 ms.
+
+### Task 3.6 review (MCP server) and 3.5 (Power): PASS
+
+- `tools/frankentty-mcp/server.ts`: zero-dependency MCP server (stdio,
+  newline-delimited JSON-RPC 2.0, protocol 2025-06-18) with four tools:
+  `frankentty_bench`, `frankentty_probe_media`, `frankentty_render_snapshot`
+  (decodes one frame, runs the real pipeline, replays it in `@xterm/headless`,
+  returns the glyph grid and top background colors), `frankentty_terminal_caps`.
+  22 integration tests; suite 39 files, 455 tests PASS.
+- Power `powers/vt100-video/` (Agent Plugins format): `plugin.json`, skills
+  `vt100-escapes`, `ffmpeg-pipe`, `terminal-bench`, and `mcp.json`.
+  `kiro-cli powers install ./powers/vt100-video` → "Installed power".
+- **Finding:** in Kiro CLI 3.0 `--no-interactive` runs, the Power activated
+  but reported "Available servers: ." A probe Power whose MCP command only
+  writes its cwd to a file never ran, so the CLI did not start Power MCP
+  servers in that mode. Workaround: the same server is registered in
+  `.kiro/agents/architect-opus.json` (`mcpServers`). The agent-level
+  `.kiro/settings/mcp.json` is write-protected for the orchestrator by the
+  Kiro Crew policy.
+- End-to-end through Kiro (2026-11-05):
+  `kiro-cli chat --v3 --agent architect-opus` called
+  `frankentty_render_snapshot` (testsrc2, 40×12) and got a 11-row glyph grid
+  with top backgrounds `#00fe00` (60 cells), `#fdfe00` (60), `#0000fd` (59);
+  `frankentty_terminal_caps` for the Apple Terminal 488 environment returned
+  colorDepth 24.
