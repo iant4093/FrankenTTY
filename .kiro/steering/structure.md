@@ -11,6 +11,8 @@ src/
   ingest/probe.ts         ffprobe JSON wrapper
   ingest/decoder.ts       ffmpeg rgb24 pipe, generation IDs, restart on seek/resize
   ingest/assembler.ts     Byte chunks -> exact W*H*3 frames
+  ingest/demo.ts          --demo lavfi source table (video + audio filters, metadata)
+  player/controller.ts    State, frame loop, pacing, decoder restarts (wires ingest -> renderer -> stdout)
   audio/player.ts         ffmpeg -> WAV -> ffplay stdin
   audio/clock.ts          Presentation clock (wall clock anchored at audio start)
   renderer/sequences.ts   All escape sequence constants and byte writers
@@ -40,6 +42,8 @@ spikes/                   Throwaway experiments; never imported by src/
   buffers and options; output is bytes in a caller-owned buffer.
 - `term/*` and `tui/*` own `process.stdin` / `process.stdout`.
 - `ingest/*` and `audio/*` own child processes.
+- `player/*` owns the frame loop and timers; it calls renderer functions and
+  writes their bytes to stdout. It holds no escape literals.
 - `main.ts` wires them; it contains no rendering or parsing logic.
 - Tests import modules directly; nothing in `src/` imports from `tests/`.
 

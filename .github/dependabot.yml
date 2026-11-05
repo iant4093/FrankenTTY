@@ -11,6 +11,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # typescript-eslint 8.x supports TypeScript < 6.1 only. Revisit when it adds 7.x.
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
     groups:
       dev-dependencies:
         dependency-type: development
