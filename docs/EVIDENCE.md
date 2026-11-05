@@ -332,3 +332,25 @@ running after the suite.
 
 Deferred to Wave 4 (input router): keys typed during the 200 ms probe are
 dropped (`probe.passthrough` unused).
+
+### Windows CI catch: process-tree kill (task 2.3b, 2026-11-05)
+
+CI on `3ec37c4` failed on windows-latest only: `killNow()` timed out at
+30 s, and the loop test saw 16 frames where it expected over 20.
+
+- **Root cause:** Chocolatey's `ffmpeg.exe` on `PATH` is a shim that starts
+  the real ffmpeg as a child. `child.kill('SIGKILL')` killed only the shim;
+  the real ffmpeg kept the stdout pipe open, so `onEnd` never fired and
+  ffmpeg leaked. Scoop installs shims too, so real Windows users would hit
+  this. builder-sonnet reproduced it on macOS with a non-forwarding shim
+  (`tests/helpers/ffmpeg-shim.ts`); the new test fails on the old code and
+  passes on the fix.
+- **Fix:** `src/ingest/kill-tree.ts` (`taskkill /pid N /T /F` on Windows,
+  argv array, no shell). `killNow()` and `stop()` also destroy stdout so
+  `onEnd` fires even if a descendant holds the pipe. `probe.ts` timeouts use
+  the same helper.
+- **Flaky tests hardened:** timing assertions now poll with 20 s deadlines
+  and count behavior (loop restarts) instead of frames per second.
+- CI on `0e22fdb`: all four jobs **success**, including windows-latest.
+
+Wave 2 automated exit check met. Hand check (task 2.5) pending.

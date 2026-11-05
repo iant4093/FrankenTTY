@@ -22,7 +22,7 @@ done task: `docs/EVIDENCE.md`.
 - [x] 2.1 [builder-sonnet] `scripts/generate-demo-media.sh` and lavfi `--demo` sources. (REQ-COMP-03, REQ-INGEST-03)
 - [x] 2.2 [builder-sonnet] `probe.ts`, `decoder.ts`, `assembler.ts` + P4. (REQ-INGEST-01/02/04/05/06)
 - [x] 2.3 [builder-sonnet] Naive half-block render loop on the wall clock. (REQ-RENDER-01/04, REQ-SYNC-02)
-- [ ] 2.4 [architect-opus] Review child process cleanup and backpressure.
+- [x] 2.4 [architect-opus] Review child process cleanup and backpressure.
 - [ ] 2.5 [Ian] Demo plays in Apple Terminal and Windows Terminal.
 
 ## Wave 3: Compression + modes (Nov 14-18)
