@@ -52,3 +52,36 @@ export async function replay(
     term.dispose();
   }
 }
+
+export type Emulator = InstanceType<typeof Terminal>;
+
+/**
+ * Feeds `output` into a real emulator core and returns the terminal so a test can read its
+ * cell buffer. The caller disposes it.
+ */
+export async function replayInto(output: string | Uint8Array, cols: number, rows: number): Promise<Emulator> {
+  const term = new Terminal({ cols, rows, allowProposedApi: true });
+  await new Promise<void>((resolve) => {
+    if (typeof output === 'string') term.write(output, resolve);
+    else term.write(output, resolve);
+  });
+  return term;
+}
+
+export interface CellInfo {
+  char: string;
+  /** Packed 0xRRGGBB, or null when the foreground is not a 24-bit color. */
+  fg: number | null;
+  bg: number | null;
+}
+
+/** Reads one cell (0-based) from the active buffer. */
+export function readCell(term: Emulator, x: number, y: number): CellInfo {
+  const cell = term.buffer.active.getLine(y)?.getCell(x);
+  if (cell === undefined) return { char: '', fg: null, bg: null };
+  return {
+    char: cell.getChars(),
+    fg: cell.isFgRGB() ? cell.getFgColor() : null,
+    bg: cell.isBgRGB() ? cell.getBgColor() : null,
+  };
+}

@@ -12,10 +12,13 @@ Spec keys:
   timeout  seconds before the child is killed (default 10)
   events   list of {"at": seconds, "hex": "71"} (bytes to write to the PTY)
            or {"at": seconds, "signal": "SIGTERM"} (signal sent to the child)
+           or {"at": seconds, "resize": [cols, rows]} (TIOCSWINSZ on the master,
+           then SIGWINCH to the child)
 
-Prints {"exitCode": int, "outputBase64": str, "timedOut": bool}.
+Prints {"exitCode": int, "outputBase64": str, "timedOut": bool, "chunks": [...]}.
 exitCode is the exit status, or the negated signal number if the child was
-killed by a signal.
+killed by a signal. chunks lists every read as {"t": seconds since start,
+"b64": str}, so tests can window the output by time.
 """
 import base64
 import fcntl
@@ -74,6 +77,7 @@ def main():
             os._exit(127)
 
     output = bytearray()
+    chunks = []
     start = time.monotonic()
     index = 0
     status = None
@@ -88,8 +92,14 @@ def main():
                 os.write(fd, bytes.fromhex(event["hex"]))
             elif "signal" in event:
                 os.kill(pid, getattr(signal, event["signal"]))
+            elif "resize" in event:
+                new_cols, new_rows = event["resize"]
+                fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", int(new_rows), int(new_cols), 0, 0))
+                os.kill(pid, signal.SIGWINCH)
 
         data, _ = read_available(fd, 0.02)
+        if data:
+            chunks.append({"t": round(time.monotonic() - start, 4), "b64": base64.b64encode(data).decode("ascii")})
         output += data
 
         finished, raw_status = os.waitpid(pid, os.WNOHANG)
@@ -105,6 +115,8 @@ def main():
     # Drain whatever the child wrote before exiting.
     while True:
         data, eof = read_available(fd, 0.1)
+        if data:
+            chunks.append({"t": round(time.monotonic() - start, 4), "b64": base64.b64encode(data).decode("ascii")})
         output += data
         if eof or not data:
             break
@@ -116,6 +128,7 @@ def main():
                 "exitCode": decode_status(status),
                 "outputBase64": base64.b64encode(bytes(output)).decode("ascii"),
                 "timedOut": timed_out,
+                "chunks": chunks,
             }
         )
     )

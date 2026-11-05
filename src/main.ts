@@ -1,21 +1,15 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { release } from 'node:os';
 import { HELP_TEXT, VERSION, parseArgs } from './cli/args.ts';
 import type { Options } from './cli/args.ts';
-import {
-  describeCapabilities,
-  detectColorDepth,
-  detectUnicode,
-  installCommand,
-  resolveCellAspect,
-  runProbe,
-} from './term/capabilities.ts';
-import { createScreen, drawCentered, installExitTraps } from './term/screen.ts';
+import { demoMetadata, demoVideoInputArgs, getDemo } from './ingest/demo.ts';
+import type { MediaInfo } from './ingest/media-info.ts';
+import { ProbeError, probe as probeInput } from './ingest/probe.ts';
+import { createPlayer } from './player/controller.ts';
+import { installCommand, resolveCellAspect, runProbe } from './term/capabilities.ts';
+import { createScreen, installExitTraps } from './term/screen.ts';
 
 const TOOL_CHECK_TIMEOUT_MS = 5000;
-const KEY_Q = 0x71;
-const KEY_CTRL_C = 0x03;
 
 /** Runs `<tool> -version` with an argv array and no shell. */
 function toolAvailable(tool: string): Promise<boolean> {
@@ -44,28 +38,20 @@ function readOsRelease(): string | null {
   }
 }
 
-/** Exit code requested by a key byte: 0 for q, 130 for Ctrl+C, null otherwise. */
-function quitCode(bytes: Uint8Array): number | null {
-  for (const b of bytes) {
-    if (b === KEY_CTRL_C) return 130;
-    if (b === KEY_Q) return 0;
-  }
-  return null;
+interface Media {
+  info: MediaInfo;
+  inputArgs: string[];
 }
 
-function waitForQuit(initial: Uint8Array): Promise<number> {
-  return new Promise((resolve) => {
-    const early = quitCode(initial);
-    if (early !== null) {
-      resolve(early);
-      return;
-    }
-    process.stdin.on('data', (chunk: Uint8Array) => {
-      const code = quitCode(chunk);
-      if (code !== null) resolve(code);
-    });
-    process.stdin.resume();
-  });
+/** Resolves what to play before the terminal is touched. Throws ProbeError for bad inputs. */
+async function resolveMedia(options: Options): Promise<Media> {
+  if (options.demo !== null) {
+    const src = getDemo(options.demo);
+    return { info: demoMetadata(src), inputArgs: demoVideoInputArgs(src) };
+  }
+  const input = options.input;
+  if (input === null) throw new ProbeError('no input given');
+  return { info: await probeInput(input), inputArgs: ['-i', input] };
 }
 
 /** Returns an exit code for early exits. The interactive path exits the process itself. */
@@ -111,33 +97,35 @@ async function run(argv: string[]): Promise<number> {
     console.error('frankentty: warning: ffplay not found on PATH, playing without audio');
   }
 
+  let media: Media;
+  try {
+    media = await resolveMedia(options);
+  } catch (err) {
+    if (!(err instanceof ProbeError)) throw err;
+    console.error(`frankentty: ${err.message.split('\n')[0]}`);
+    return 1;
+  }
+
   const screen = createScreen(process.stdout, process.stdin);
   installExitTraps(screen);
   screen.enter();
 
   const probe = await runProbe(process.stdin, process.stdout);
-  const { unicode, braille } = detectUnicode(process.env, process.platform);
-  const cols = process.stdout.columns;
-  const rows = process.stdout.rows;
-  const lines = describeCapabilities({
-    colorDepth: detectColorDepth(
-      process.env,
-      process.platform,
-      release(),
-      process.stdout.getColorDepth(),
-      options.color,
-    ),
-    sync2026: probe.sync2026,
-    cellAspect: resolveCellAspect(options.cellAspect, probe.cellAspect),
-    unicode,
-    braille,
-    cols,
-    rows,
+  const player = createPlayer({
+    stdout: process.stdout,
+    stdin: process.stdin,
+    screen,
+    mediaInfo: media.info,
+    inputArgs: media.inputArgs,
+    isFile: media.info.source === 'file',
+    fps: options.fps,
+    cellAspect: resolveCellAspect(options.cellAspect, probe.cellAspect).value,
+    loop: options.loop,
   });
-  drawCentered(process.stdout, ['FrankenTTY', '', ...lines, '', 'press q to quit'], cols, rows);
-
-  const code = await waitForQuit(probe.passthrough);
+  const code = await player.start();
   screen.restore();
+  const failure = player.lastError();
+  if (failure !== null) console.error(`frankentty: ${failure}`);
   process.exit(code);
 }
 

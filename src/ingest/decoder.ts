@@ -52,6 +52,11 @@ export interface Decoder {
   onEnd(cb: (info: DecoderEndInfo) => void): void;
   /** Idempotent. SIGTERM, then SIGKILL after 1000 ms. Resolves when the child has exited. */
   stop(): Promise<void>;
+  /**
+   * Synchronous and idempotent: sends SIGKILL if the child is still alive. For exit paths
+   * where the asynchronous stop() cannot run. Does not wait for the child to exit.
+   */
+  killNow(): void;
 }
 
 const STDERR_TAIL_BYTES = 4096;
@@ -193,6 +198,14 @@ export function createDecoder(opts: DecoderOptions): Decoder {
         return;
       }
       endCallbacks.push(cb);
+    },
+    killNow() {
+      if (exited || child.pid === undefined) return;
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // The process is already gone.
+      }
     },
     stop() {
       if (stopPromise !== null) return stopPromise;

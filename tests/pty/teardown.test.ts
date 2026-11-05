@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { RESTORE_SEQUENCE } from '../../src/renderer/sequences.ts';
+import { RESTORE_SEQUENCE, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { replay } from '../helpers/emulator.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -63,11 +63,10 @@ async function expectCleanTerminal(output: string): Promise<void> {
 }
 
 describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
-  it("'q' shows the placeholder, exits 0 and restores the terminal", async () => {
+  it("'q' exits 0 and restores the terminal", async () => {
     const r = runInPty({ hex: '71' });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
-    expect(r.output).toContain('FrankenTTY');
     await expectCleanTerminal(r.output);
   });
 
@@ -85,16 +84,14 @@ describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
     await expectCleanTerminal(r.output);
   });
 
-  it('the placeholder is on the alternate screen while running', async () => {
+  it('playback runs on the alternate screen with the cursor hidden and autowrap off', async () => {
     const r = runInPty({ hex: '71' });
+    expect(r.output).toContain(SYNC_BEGIN);
     const beforeRestore = r.output.slice(0, r.output.length - RESTORE_SEQUENCE.length);
     const state = await replay(beforeRestore, COLS, ROWS);
     expect(state.bufferType).toBe('alternate');
     expect(state.modes[25]).toBe(2); // cursor hidden
     expect(state.modes[7]).toBe(2); // autowrap off
-    const text = state.rows.join('\n');
-    expect(text).toContain('FrankenTTY');
-    expect(text).toContain('color: 24-bit');
-    expect(text).toContain(`size: ${COLS}x${ROWS}`);
+    expect(state.rows[ROWS - 1]).toBe(''); // HUD row stays blank
   });
 });

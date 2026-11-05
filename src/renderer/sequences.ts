@@ -73,3 +73,73 @@ export function writeCursorPosition(buf: Uint8Array, pos: number, row: number, c
   buf[p++] = 0x48; // H
   return p;
 }
+
+// ---------------------------------------------------------------------------
+// Byte writers for the per-frame hot path. Everything here is built once at
+// module load; the writers allocate nothing.
+// ---------------------------------------------------------------------------
+
+/** Upper half block, U+2580: foreground = top pixel, background = bottom pixel. */
+export const UPPER_HALF_BLOCK = '\u2580';
+
+export const SYNC_BEGIN_BYTES: Uint8Array = Buffer.from(SYNC_BEGIN);
+export const SYNC_END_BYTES: Uint8Array = Buffer.from(SYNC_END);
+export const SGR_RESET_BYTES: Uint8Array = Buffer.from(SGR_RESET);
+export const UPPER_HALF_BLOCK_BYTES: Uint8Array = Buffer.from(UPPER_HALF_BLOCK);
+/** `CSI 38;2;` (7 bytes), followed by `R;G;Bm`. */
+export const SGR_FG_RGB_PREFIX: Uint8Array = Buffer.from(CSI + '38;2;');
+/** `CSI 48;2;` (7 bytes), followed by `R;G;Bm`. */
+export const SGR_BG_RGB_PREFIX: Uint8Array = Buffer.from(CSI + '48;2;');
+
+/** Longest `CSI 38;2;R;G;Bm` or `CSI 48;2;R;G;Bm`: 7 + 3 + 1 + 3 + 1 + 3 + 1 bytes. */
+export const SGR_RGB_MAX_BYTES = 19;
+
+// Decimal text of 0..255: DEC_LEN[v] digits, left-aligned in DEC_DIGITS[v*3 .. v*3+2].
+const DEC_LEN = new Uint8Array(256);
+const DEC_DIGITS = new Uint8Array(256 * 3);
+for (let v = 0; v < 256; v++) {
+  const text = String(v);
+  DEC_LEN[v] = text.length;
+  for (let i = 0; i < text.length; i++) DEC_DIGITS[v * 3 + i] = text.charCodeAt(i);
+}
+
+/** Copies `bytes` into `buf` at `pos`. Returns the new cursor. */
+export function writeBytes(buf: Uint8Array, pos: number, bytes: Uint8Array): number {
+  const n = bytes.length;
+  for (let i = 0; i < n; i++) buf[pos + i] = bytes[i] ?? 0;
+  return pos + n;
+}
+
+/** Writes an integer 0..255 as ASCII decimal using the precomputed table. Returns the new cursor. */
+export function writeByteDecimal(buf: Uint8Array, pos: number, value: number): number {
+  const base = value * 3;
+  const n = DEC_LEN[value] ?? 1;
+  buf[pos] = DEC_DIGITS[base] ?? 0x30;
+  if (n > 1) {
+    buf[pos + 1] = DEC_DIGITS[base + 1] ?? 0x30;
+    if (n > 2) buf[pos + 2] = DEC_DIGITS[base + 2] ?? 0x30;
+  }
+  return pos + n;
+}
+
+/**
+ * Writes `<prefix>R;G;Bm`, where `prefix` is SGR_FG_RGB_PREFIX or SGR_BG_RGB_PREFIX.
+ * `r`, `g`, `b` must be integers 0..255. The caller guarantees SGR_RGB_MAX_BYTES of room.
+ */
+export function writeSgrRgb(
+  buf: Uint8Array,
+  pos: number,
+  prefix: Uint8Array,
+  r: number,
+  g: number,
+  b: number,
+): number {
+  let p = writeBytes(buf, pos, prefix);
+  p = writeByteDecimal(buf, p, r);
+  buf[p++] = 0x3b; // ;
+  p = writeByteDecimal(buf, p, g);
+  buf[p++] = 0x3b; // ;
+  p = writeByteDecimal(buf, p, b);
+  buf[p++] = 0x6d; // m
+  return p;
+}
