@@ -14,14 +14,14 @@ done task: `docs/EVIDENCE.md`.
 - [x] 1.1 [architect-opus] Git, LICENSE, `.gitignore`, `.kiro/` (agents, steering, hooks, specs), toolchain (`package.json`, `tsconfig.json`, ESLint, Vitest), hook scripts.
 - [x] 1.2 [builder-sonnet] `src/main.ts`, `src/cli/args.ts`, `src/term/screen.ts`, `src/term/capabilities.ts`, `src/renderer/sequences.ts`, with unit tests, P7, and a PTY + `@xterm/headless` teardown test. (REQ-CLI-01/02, REQ-TTY-01, REQ-PREREQ-01, REQ-TERM-01/03, REQ-CAP-01/02/03)
 - [x] 1.3 [builder-sonnet] `src/renderer/geometry.ts` and P1. (REQ-GEO-01/02, REQ-TERM-02 math)
-- [~] 1.4 [architect-opus] Review 1.2 (+1.2b) and 1.3 done; `scripts/` (lint, test, check-workflows) and CI `quality` + `test` jobs on 3 OSes; README skeleton; first PR.
-- [ ] 1.5 [Ian] Hand check in Apple Terminal: `npm run dev -- --help`, and `q` / Ctrl+C restore the terminal.
+- [x] 1.4 [architect-opus] Review 1.2 (+1.2b) and 1.3 done; `scripts/` (lint, test, check-workflows) and CI `quality` + `test` jobs on 3 OSes; README skeleton; first PR.
+- [x] 1.5 [Ian] Hand check in Apple Terminal: `npm run dev -- --help`, and `q` / Ctrl+C restore the terminal.
 
 ## Wave 2: Ingest + first playback (Nov 11-13)
 
-- [ ] 2.1 [builder-sonnet] `scripts/generate-demo-media.sh` and lavfi `--demo` sources. (REQ-COMP-03, REQ-INGEST-03)
-- [ ] 2.2 [builder-sonnet] `probe.ts`, `decoder.ts`, `assembler.ts` + P4. (REQ-INGEST-01/02/04/05/06)
-- [ ] 2.3 [builder-sonnet] Naive half-block render loop on the wall clock. (REQ-RENDER-01/04, REQ-SYNC-02)
+- [x] 2.1 [builder-sonnet] `scripts/generate-demo-media.sh` and lavfi `--demo` sources. (REQ-COMP-03, REQ-INGEST-03)
+- [x] 2.2 [builder-sonnet] `probe.ts`, `decoder.ts`, `assembler.ts` + P4. (REQ-INGEST-01/02/04/05/06)
+- [~] 2.3 [builder-sonnet] Naive half-block render loop on the wall clock. (REQ-RENDER-01/04, REQ-SYNC-02)
 - [ ] 2.4 [architect-opus] Review child process cleanup and backpressure.
 - [ ] 2.5 [Ian] Demo plays in Apple Terminal and Windows Terminal.
 

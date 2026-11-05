@@ -270,3 +270,46 @@ spec was wrong.
 
 Extra guard found by the builder: the cap step now clamps `r'` to
 `availRows`, so a tall source cannot overflow the terminal after `c` shrinks.
+
+### CI: first run on `main` (2026-11-05)
+
+Run [42108531329](https://github.com/iant4093/FrankenTTY/actions/runs/42108531329)
+on `94ca93e`: compliance + workflow checks, CodeQL, and tests on
+ubuntu-latest, macos-latest and windows-latest all **success** on the first
+push. Wave 1 exit check met.
+
+---
+
+## Wave 2: ingest and first playback (2026-11-05)
+
+Tasks 2.1 and 2.2 ran **in parallel** as two builder-sonnet sessions, each in
+its own `git worktree` (`wave2/2.1`, `wave2/2.2`). Hooks ran per worktree,
+so each Stop gate tested only its own tree. architect-opus created the shared
+type `src/ingest/media-info.ts` before forking so the branches could not
+conflict. Both merged cleanly; combined suite on `main`: 16 files, 248 tests
+PASS.
+
+### Task 2.1 review: PASS
+
+Five 640×360, 30 fps, 60 s lavfi demos with distinct `aevalsrc` audio
+(peaks −14.0 to −14.9 dBFS). `testsrc2` beeps left 1 kHz / right 440 Hz on
+every second, for A/V sync checks in Wave 4. `scripts/generate-demo-media.sh`
+reads the filters from `src/ingest/demo.ts` (one source of truth). Accepted
+deviations: `trim=duration=60` where a filter has no `duration` option; life
+and cellauto render small and scale with `neighbor`.
+
+### Task 2.2 review: PASS, with one brief bug found by an integration test
+
+- P4a/P4b at 1,000 runs, P4c at 500: PASS. The builder confirmed P4b fails
+  when the generation check is removed (mutation check).
+- **Brief bug #2 (2026-11-05):** brief 2.2 told the decoder to `push` whole
+  pipe chunks and pause when full. One 64 KB ffmpeg chunk holds about 9
+  frames at 64×36, more than the queue capacity of 4, so the design would
+  silently drop frames; the "exactly 60 frames" integration test would fail.
+  The builder made backpressure lossless: the decoder feeds only
+  `bytesUntilFull()` bytes and holds the rest until the consumer takes a frame.
+- `stop()` destroys the child's stdout right after SIGTERM so a blocked
+  ffmpeg dies at once. No ffmpeg processes left after 4 runs of the
+  integration file.
+- Inputs starting with `-` are passed after `-i`; non-http schemes (rtmp,
+  udp) are rejected as live streams.
