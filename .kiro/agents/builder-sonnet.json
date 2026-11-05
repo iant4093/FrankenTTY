@@ -18,10 +18,11 @@
   "toolsSettings": {
     "fs_write": {
       "allowedPaths": [
+        "assets/**",
+        "scripts/**",
         "src/**",
         "tests/**",
-        "scripts/**",
-        "assets/**"
+        "tools/**"
       ],
       "deniedPaths": [
         ".kiro/**",
@@ -75,7 +76,8 @@
           "src/**",
           "tests/**",
           "scripts/**",
-          "assets/**"
+          "assets/**",
+          "tools/**"
         ],
         "effect": "allow"
       },
