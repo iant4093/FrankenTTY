@@ -1,0 +1,41 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "h264",
+      "profile": "High",
+      "codec_type": "video",
+      "width": 1440,
+      "height": 1080,
+      "coded_width": 1440,
+      "coded_height": 1088,
+      "sample_aspect_ratio": "4:3",
+      "display_aspect_ratio": "16:9",
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "25/1",
+      "avg_frame_rate": "25/1",
+      "time_base": "1/25",
+      "start_time": "0.000000",
+      "duration": "60.040000",
+      "disposition": { "default": 1, "attached_pic": 0 }
+    },
+    {
+      "index": 1,
+      "codec_name": "ac3",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 6,
+      "channel_layout": "5.1(side)",
+      "disposition": { "default": 1, "attached_pic": 0 }
+    }
+  ],
+  "format": {
+    "filename": "broadcast.ts",
+    "nb_streams": 2,
+    "format_name": "mpegts",
+    "start_time": "1.400000",
+    "duration": "60.080000",
+    "size": "45000000",
+    "bit_rate": "5992000"
+  }
+}

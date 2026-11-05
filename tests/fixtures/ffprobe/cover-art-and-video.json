@@ -1,0 +1,55 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "44100",
+      "channels": 2,
+      "channel_layout": "stereo",
+      "disposition": { "default": 1, "attached_pic": 0 }
+    },
+    {
+      "index": 1,
+      "codec_name": "mjpeg",
+      "codec_long_name": "Motion JPEG",
+      "profile": "Baseline",
+      "codec_type": "video",
+      "width": 600,
+      "height": 600,
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "1:1",
+      "pix_fmt": "yuvj420p",
+      "r_frame_rate": "90000/1",
+      "avg_frame_rate": "0/0",
+      "time_base": "1/90000",
+      "disposition": { "default": 0, "attached_pic": 1 },
+      "tags": { "comment": "Cover (front)" }
+    },
+    {
+      "index": 2,
+      "codec_name": "vp9",
+      "profile": "Profile 0",
+      "codec_type": "video",
+      "width": 1280,
+      "height": 720,
+      "sample_aspect_ratio": "1:1",
+      "display_aspect_ratio": "16:9",
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "24/1",
+      "avg_frame_rate": "24/1",
+      "time_base": "1/1000",
+      "disposition": { "default": 1, "attached_pic": 0 },
+      "tags": { "language": "eng", "DURATION": "00:03:20.500000000" }
+    }
+  ],
+  "format": {
+    "filename": "album-video.mkv",
+    "nb_streams": 3,
+    "format_name": "matroska,webm",
+    "start_time": "0.000000",
+    "duration": "200.500000",
+    "size": "30000000",
+    "bit_rate": "1197000"
+  }
+}

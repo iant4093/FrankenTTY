@@ -1,0 +1,29 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "h264",
+      "profile": "Constrained Baseline",
+      "codec_type": "video",
+      "width": 854,
+      "height": 480,
+      "sample_aspect_ratio": "0:1",
+      "display_aspect_ratio": "0:1",
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "30000/1001",
+      "avg_frame_rate": "0/0",
+      "time_base": "1/1000",
+      "disposition": { "default": 1, "attached_pic": 0 },
+      "tags": { "language": "eng" }
+    }
+  ],
+  "format": {
+    "filename": "screen-capture.mkv",
+    "nb_streams": 1,
+    "format_name": "matroska,webm",
+    "start_time": "0.000000",
+    "duration": "N/A",
+    "size": "1048576",
+    "bit_rate": "N/A"
+  }
+}
