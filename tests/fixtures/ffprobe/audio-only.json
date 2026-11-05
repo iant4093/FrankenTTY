@@ -1,0 +1,30 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "mp3",
+      "codec_long_name": "MP3 (MPEG audio layer 3)",
+      "codec_type": "audio",
+      "sample_fmt": "fltp",
+      "sample_rate": "44100",
+      "channels": 2,
+      "channel_layout": "stereo",
+      "r_frame_rate": "0/0",
+      "avg_frame_rate": "0/0",
+      "time_base": "1/14112000",
+      "start_time": "0.025057",
+      "duration": "215.039000",
+      "bit_rate": "320000",
+      "disposition": { "default": 0, "attached_pic": 0 }
+    }
+  ],
+  "format": {
+    "filename": "track.mp3",
+    "nb_streams": 1,
+    "format_name": "mp3",
+    "start_time": "0.025057",
+    "duration": "215.064000",
+    "size": "8602560",
+    "bit_rate": "320000"
+  }
+}
