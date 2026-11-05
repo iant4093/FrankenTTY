@@ -313,3 +313,22 @@ and cellauto render small and scale with `neighbor`.
   integration file.
 - Inputs starting with `-` are passed after `-i`; non-http schemes (rtmp,
   udp) are rejected as live streams.
+
+### Task 2.3 review: PASS
+
+Suite on `main`: 23 files, 287 tests PASS. Bundle 52.6 KB. No ffmpeg left
+running after the suite.
+
+| Check | Result |
+|---|---|
+| P6 downsample (2 properties × 1,000) | PASS |
+| P2c-naive: `@xterm/headless` replay equals input pixels exactly (200 runs) | PASS |
+| Pacing, 30 fps source, 2.0 s window from first frame | 61 frames (target 60 ± 8) |
+| Startup to first frame (Node, probe, ffprobe, ffmpeg) | 0.44–0.46 s |
+| Red file → center cell `▀`, fg/bg within ±16 of (255,0,0); HUD row blank | PASS |
+| End of file exits 0 by itself; resize 80×24 → 100×30 redraws at new size | PASS |
+| Hot path (`halfblock.ts`, `downsample.ts`) | no allocation outside error paths |
+| SEA binary of the bundle (macOS arm64), `--demo life` in an 80×24 PTY, 2 s | exit 0, 52 frames, 3.4 MB written |
+
+Deferred to Wave 4 (input router): keys typed during the 200 ms probe are
+dropped (`probe.passthrough` unused).
