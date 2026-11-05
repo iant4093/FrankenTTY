@@ -1,0 +1,112 @@
+{
+  "name": "builder-sonnet",
+  "description": "FrankenTTY implementation and testing engineer. Implements one bounded task brief from architect-opus inside src/, tests/ and scripts/, with unit and property-based tests.",
+  "model": "claude-sonnet-5.5",
+  "prompt": "You are builder-sonnet, the implementation engineer for FrankenTTY. You receive ONE task brief from architect-opus (the orchestrator and reviewer). Implement exactly that brief: no extra features, no refactors outside it. Follow every rule in the steering files, especially tech.md (zero runtime dependencies, no per-cell allocation in hot loops, terminal teardown safety). Write unit tests and property-based tests (fast-check) for every module you touch. Before you finish, run `npm run typecheck`, `npm run lint` and `npm test` and fix failures. Never edit .kiro/, docs/, README.md, DEVPOST_WRITEUP.md, LICENSE or .github/; those belong to architect-opus. Never commit, push or change git config. End with a short report: files changed, tests added (with property names and run counts), commands run with their results, and any open question or deviation from the brief.",
+  "tools": [
+    "glob",
+    "grep",
+    "read",
+    "shell",
+    "write"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob"
+  ],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": [
+        "src/**",
+        "tests/**",
+        "scripts/**",
+        "assets/**"
+      ],
+      "deniedPaths": [
+        ".kiro/**",
+        ".github/**",
+        "docs/**",
+        "scripts/hooks/**",
+        "package.json",
+        "LICENSE",
+        "README.md",
+        "DEVPOST_WRITEUP.md",
+        "package-lock.json"
+      ]
+    },
+    "execute_bash": {
+      "deniedCommands": [
+        "^git (commit|push|reset|rebase|config|clean)",
+        "rm -rf",
+        "^npm (publish|install -g)"
+      ]
+    }
+  },
+  "resources": [
+    "file://.kiro/steering/**/*.md",
+    "file://.kiro/specs/frankentty/requirements.md",
+    "file://.kiro/specs/frankentty/design.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "*git commit*",
+          "*git push*",
+          "*git reset*",
+          "*git rebase*",
+          "*git config*",
+          "*git clean*",
+          "*rm -rf*",
+          "*npm publish*",
+          "*npm install -g*"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "src/**",
+          "tests/**",
+          "scripts/**",
+          "assets/**"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          ".kiro/**",
+          ".github/**",
+          "docs/**",
+          "scripts/hooks/**",
+          "package.json",
+          "LICENSE",
+          "README.md",
+          "DEVPOST_WRITEUP.md",
+          "package-lock.json"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "skill",
+        "effect": "allow"
+      }
+    ]
+  },
+  "kiroUpgrade": {
+    "revision": 2,
+    "fingerprint": "sha256:3e4a4479afe9b014ca8f7065bb8ee0e2d2d15620645ea2c23b80e8451c9d80f7",
+    "source": "sha256:e4a312e780970e030d190c158895059d6451cc2de199f449095a2effdd8bda3c"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "name": "frankentty",
+  "version": "0.1.0",
+  "description": "Stream 30 FPS true-color video through VT100/ANSI escape codes in your terminal.",
+  "author": "Ian Truong",
+  "license": "MIT",
+  "homepage": "https://github.com/iant4093/FrankenTTY#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iant4093/FrankenTTY.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iant4093/FrankenTTY/issues"
+  },
+  "keywords": [
+    "terminal",
+    "video",
+    "ansi",
+    "vt100",
+    "truecolor",
+    "ffmpeg",
+    "cli",
+    "half-block",
+    "braille"
+  ],
+  "type": "module",
+  "bin": {
+    "frankentty": "dist/frankentty.cjs"
+  },
+  "files": [
+    "dist/frankentty.cjs",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:pbt": "vitest run tests/pbt",
+    "bundle": "node scripts/bundle.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run bundle"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "@xterm/headless": "6.0.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "fast-check": "4.10.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "spike": "wave0",
+  "started": "2026-11-05T20:03:50.372Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "osRelease": "27.0.0",
+  "node": "v26.13.0",
+  "sea": true,
+  "env": {
+    "TERM": null,
+    "TERM_PROGRAM": null,
+    "TERM_PROGRAM_VERSION": null,
+    "COLORTERM": null,
+    "WT_SESSION": null,
+    "WT_PROFILE_ID": null,
+    "LANG": null,
+    "LC_ALL": null,
+    "LC_CTYPE": "C.UTF-8",
+    "TMUX": null,
+    "ConEmuANSI": null,
+    "VSCODE_PID": null,
+    "SESSIONNAME": null
+  },
+  "isTTY": true,
+  "size": {
+    "cols": 228,
+    "rows": 63
+  },
+  "colorDepth": 1,
+  "fps": [
+    {
+      "mode": "naive",
+      "cols": 228,
+      "rowsCells": 62,
+      "seconds": 3,
+      "frames": 640,
+      "fps": 213.3,
+      "kbPerFrame": 521.2,
+      "mbPerSec": 108.54,
+      "serializeMsAvg": 2.41,
+      "writeMsAvg": 2.24,
+      "writeMsMax": 4
+    },
+    {
+      "mode": "rle",
+      "cols": 228,
+      "rowsCells": 62,
+      "seconds": 3,
+      "frames": 686,
+      "fps": 228.5,
+      "kbPerFrame": 428,
+      "mbPerSec": 95.5,
+      "serializeMsAvg": 2.4,
+      "writeMsAvg": 1.95,
+      "writeMsMax": 4
+    }
+  ],
+  "exit": "normal",
+  "finished": "2026-11-05T20:03:56.377Z"
+}

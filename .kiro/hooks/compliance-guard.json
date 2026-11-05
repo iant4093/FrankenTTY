@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "compliance-guard",
+      "description": "Deny any `git commit` unless .kiro/ is tracked and not ignored, /LICENSE is MIT, and no secret patterns are present. Exit 2 denies; the reason is shown to the agent.",
+      "trigger": "PreToolUse",
+      "matcher": "execute_bash",
+      "timeout_ms": 30000,
+      "action": { "type": "command", "command": "bash scripts/hooks/compliance-guard.sh" }
+    }
+  ]
+}

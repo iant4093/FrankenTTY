@@ -1,0 +1,20 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "test-on-write",
+      "description": "After any write under src/ or tests/, run the unit and property tests related to that file and show failures to the agent.",
+      "trigger": "PostToolUse",
+      "matcher": "fs_write",
+      "timeout_ms": 120000,
+      "action": { "type": "command", "command": "bash scripts/hooks/test-on-write.sh" }
+    },
+    {
+      "name": "gate-turn",
+      "description": "When src/ or tests/ changed, block the end of the turn until typecheck, lint and the full test suite (including PBT) pass. Max 3 blocks per session.",
+      "trigger": "Stop",
+      "timeout_ms": 300000,
+      "action": { "type": "command", "command": "bash scripts/hooks/gate-turn.sh" }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "spike": "wave0",
+  "started": "2026-11-05T20:22:06.473Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "osRelease": "27.0.0",
+  "node": "v26.13.0",
+  "sea": true,
+  "env": {
+    "TERM": "xterm-256color",
+    "TERM_PROGRAM": "Apple_Terminal",
+    "TERM_PROGRAM_VERSION": "488",
+    "COLORTERM": "truecolor",
+    "WT_SESSION": null,
+    "WT_PROFILE_ID": null,
+    "LANG": "en_US.UTF-8",
+    "LC_ALL": null,
+    "LC_CTYPE": null,
+    "TMUX": null,
+    "ConEmuANSI": null,
+    "VSCODE_PID": null,
+    "SESSIONNAME": null
+  },
+  "isTTY": true,
+  "size": {
+    "cols": 175,
+    "rows": 50
+  },
+  "colorDepth": 8,
+  "probe": {
+    "raw": "\\x1b[4;717;1245t\\x1b[?1;2c",
+    "da1Ms": 0.8,
+    "sync2026": "no reply",
+    "cellPx": null,
+    "windowPx": {
+      "h": 717,
+      "w": 1245
+    },
+    "cellPxDerived": {
+      "h": 14.34,
+      "w": 7.11,
+      "aspect": 2.016
+    }
+  },
+  "keys": {
+    "raw": "\\x1b[D\\x1b[C\\x1b[1;2D\\x1b[1;2C q",
+    "decoded": [
+      "Left",
+      "Right",
+      "Shift+Left",
+      "Shift+Right",
+      "Space",
+      "q"
+    ],
+    "resizeEvents": [],
+    "finalSize": {
+      "cols": 175,
+      "rows": 50
+    }
+  },
+  "fps": [
+    {
+      "mode": "naive",
+      "cols": 175,
+      "rowsCells": 49,
+      "seconds": 4.37,
+      "frames": 35,
+      "fps": 8,
+      "kbPerFrame": 316,
+      "mbPerSec": 2.47,
+      "serializeMsAvg": 1.98,
+      "writeMsAvg": 122.81,
+      "writeMsMax": 715.4
+    },
+    {
+      "mode": "rle",
+      "cols": 204,
+      "rowsCells": 57,
+      "seconds": 4.1,
+      "frames": 26,
+      "fps": 6.3,
+      "kbPerFrame": 357.3,
+      "mbPerSec": 2.21,
+      "serializeMsAvg": 2.33,
+      "writeMsAvg": 155.39,
+      "writeMsMax": 251.3
+    }
+  ],
+  "exit": "normal",
+  "finished": "2026-11-05T20:22:27.350Z"
+}

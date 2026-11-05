@@ -1,0 +1,196 @@
+{
+  "spike": "wave0",
+  "started": "2026-11-05T20:23:46.503Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "osRelease": "27.0.0",
+  "node": "v26.13.0",
+  "sea": true,
+  "env": {
+    "TERM": null,
+    "TERM_PROGRAM": null,
+    "TERM_PROGRAM_VERSION": null,
+    "COLORTERM": null,
+    "WT_SESSION": null,
+    "WT_PROFILE_ID": null,
+    "LANG": null,
+    "LC_ALL": null,
+    "LC_CTYPE": "C.UTF-8",
+    "TMUX": null,
+    "ConEmuANSI": null,
+    "VSCODE_PID": null,
+    "SESSIONNAME": null
+  },
+  "isTTY": true,
+  "size": {
+    "cols": 175,
+    "rows": 50
+  },
+  "colorDepth": 1,
+  "sweep": [
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "plasma",
+      "enc": "rle24",
+      "fps": 1645,
+      "kbPerFrame": 56.1,
+      "mbPerSec": 90.15
+    },
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "plasma",
+      "enc": "rle24q",
+      "fps": 2630.6,
+      "kbPerFrame": 31.5,
+      "mbPerSec": 80.98
+    },
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "plasma",
+      "enc": "rle256",
+      "fps": 5441.9,
+      "kbPerFrame": 9.9,
+      "mbPerSec": 52.79
+    },
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "bars",
+      "enc": "rle24",
+      "fps": 8384.5,
+      "kbPerFrame": 6.9,
+      "mbPerSec": 56.42
+    },
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "bars",
+      "enc": "rle24q",
+      "fps": 7988.3,
+      "kbPerFrame": 6.9,
+      "mbPerSec": 53.75
+    },
+    {
+      "cols": 80,
+      "rows": 23,
+      "content": "bars",
+      "enc": "rle256",
+      "fps": 9258.8,
+      "kbPerFrame": 5,
+      "mbPerSec": 44.98
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "plasma",
+      "enc": "rle24",
+      "fps": 653.9,
+      "kbPerFrame": 128.8,
+      "mbPerSec": 82.22
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "plasma",
+      "enc": "rle24q",
+      "fps": 1114.4,
+      "kbPerFrame": 72.5,
+      "mbPerSec": 78.89
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "plasma",
+      "enc": "rle256",
+      "fps": 2571.8,
+      "kbPerFrame": 22.2,
+      "mbPerSec": 55.79
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "bars",
+      "enc": "rle24",
+      "fps": 4876.2,
+      "kbPerFrame": 13,
+      "mbPerSec": 61.9
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "bars",
+      "enc": "rle24q",
+      "fps": 4828.3,
+      "kbPerFrame": 13,
+      "mbPerSec": 61.29
+    },
+    {
+      "cols": 120,
+      "rows": 35,
+      "content": "bars",
+      "enc": "rle256",
+      "fps": 5822.9,
+      "kbPerFrame": 9.5,
+      "mbPerSec": 54.25
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "plasma",
+      "enc": "rle24",
+      "fps": 356.5,
+      "kbPerFrame": 258.5,
+      "mbPerSec": 90.02
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "plasma",
+      "enc": "rle24q",
+      "fps": 566.6,
+      "kbPerFrame": 146.7,
+      "mbPerSec": 81.19
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "plasma",
+      "enc": "rle256",
+      "fps": 1292.6,
+      "kbPerFrame": 45.2,
+      "mbPerSec": 57.08
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "bars",
+      "enc": "rle24",
+      "fps": 2340,
+      "kbPerFrame": 25.2,
+      "mbPerSec": 57.55
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "bars",
+      "enc": "rle24q",
+      "fps": 2366.2,
+      "kbPerFrame": 25.2,
+      "mbPerSec": 58.2
+    },
+    {
+      "cols": 175,
+      "rows": 49,
+      "content": "bars",
+      "enc": "rle256",
+      "fps": 2944.7,
+      "kbPerFrame": 18.7,
+      "mbPerSec": 53.83
+    }
+  ],
+  "exit": "normal",
+  "finished": "2026-11-05T20:23:55.513Z"
+}

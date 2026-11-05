@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "sync-docs",
+      "description": "At the end of a turn, if tasks.md or the CLI surface (src/cli, src/main.ts) changed, write build/hooks/docs-stale so architect-opus syncs README.md and DEVPOST_WRITEUP.md during review.",
+      "trigger": "Stop",
+      "timeout_ms": 10000,
+      "action": { "type": "command", "command": "bash scripts/hooks/docs-stale.sh" }
+    }
+  ]
+}

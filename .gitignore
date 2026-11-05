@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Generated media (scripts/generate-demo-media.sh recreates it)
+assets/*.mp4
+assets/*.wav
+
+# Throwaway spike binaries (96-150 MB each)
+spikes/**/dist/
+
+# Local credentials and tools
+.env
+.env.*
+!.env.example
+.npmrc
+
+# OS
+.DS_Store
+
+# NOTE: .kiro/ is a hackathon deliverable and must stay tracked. Never ignore it.
