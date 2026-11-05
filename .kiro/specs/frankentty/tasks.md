@@ -37,10 +37,11 @@ done task: `docs/EVIDENCE.md`.
 
 ## Wave 4: Sync + TUI (Nov 19-22)
 
-- [ ] 4.1 [builder-sonnet] Audio player, clock, pause, seek. (REQ-SYNC-01..05)
-- [ ] 4.2 [builder-sonnet] Input router + P5, HUD, resize restart. (REQ-UI-01/02, REQ-HUD-01, REQ-TERM-02)
-- [ ] 4.3 [builder-sonnet] Quality governor. (REQ-PERF-01)
-- [ ] 4.4 [architect-opus] End-to-end review; zero terminal corruption on every exit path.
+- [x] 4.1 [builder-sonnet] Audio player, clock, pause, seek. (REQ-SYNC-01..05)
+- [x] 4.2 [builder-sonnet] Input router + P5, HUD, resize restart. (REQ-UI-01/02, REQ-HUD-01, REQ-TERM-02)
+- [x] 4.3 [builder-sonnet] Quality governor. (REQ-PERF-01)
+- [x] 4.4 [builder-sonnet + architect-opus] Integration (audio, clock, keys, HUD, governor) and end-to-end review.
+- [ ] 4.5 [Ian] Hand check in Apple Terminal: sound, Space, arrows, m, c, i, smooth at full window.
 
 ## Wave 4b: Distribution (Nov 23-24)
 
