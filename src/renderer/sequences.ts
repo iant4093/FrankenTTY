@@ -5,6 +5,8 @@
 export const ESC_BYTE = 0x1b;
 /** `[` byte, the second byte of CSI. */
 export const CSI_BYTE = 0x5b;
+/** `O` byte, the second byte of SS3 (`ESC O`). */
+export const SS3_BYTE = 0x4f;
 
 const ESC = '\x1b';
 const CSI = ESC + '[';
@@ -244,4 +246,34 @@ export function writeSgr(buf: Uint8Array, pos: number, depth: number, fg: number
   if (bg >= 0) p = writeColorParams(buf, p, depth, true, bg);
   buf[p++] = 0x6d; // m
   return p;
+}
+
+// ---------------------------------------------------------------------------
+// HUD writers (task 4.2). Same rules: no allocation, caller owns room.
+// ---------------------------------------------------------------------------
+
+/** `CSI 0;37;40m`: white on black from the fixed 16-color set, so the HUD works at every color depth. */
+export const SGR_HUD = CSI + '0;37;40m';
+/** `CSI 2K`: erase the whole current line. */
+export const ERASE_LINE = CSI + '2K';
+
+export const SGR_HUD_BYTES: Uint8Array = Buffer.from(SGR_HUD);
+export const ERASE_LINE_BYTES: Uint8Array = Buffer.from(ERASE_LINE);
+
+/** Longest `SGR_HUD` / `SGR_RESET` / `ERASE_LINE`, in bytes. */
+export const HUD_STYLE_MAX_BYTES = 10;
+
+/** Writes `CSI 0;37;40m`. Returns the new cursor. */
+export function writeHudStyle(buf: Uint8Array, pos: number): number {
+  return writeBytes(buf, pos, SGR_HUD_BYTES);
+}
+
+/** Writes `CSI 0m`. Returns the new cursor. */
+export function writeSgrReset(buf: Uint8Array, pos: number): number {
+  return writeBytes(buf, pos, SGR_RESET_BYTES);
+}
+
+/** Writes `CSI 2K`. Returns the new cursor. */
+export function writeEraseLine(buf: Uint8Array, pos: number): number {
+  return writeBytes(buf, pos, ERASE_LINE_BYTES);
 }
