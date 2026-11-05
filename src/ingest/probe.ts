@@ -1,6 +1,7 @@
 // ffprobe wrapper (REQ-INGEST-01). `parseProbeJson` is pure; `probe` owns the child process.
 
 import { spawn } from 'node:child_process';
+import { killTreeSync } from './kill-tree.ts';
 import type { MediaInfo, MediaSource } from './media-info.ts';
 
 export class ProbeError extends Error {
@@ -164,14 +165,14 @@ export async function probe(input: string, opts: ProbeOptions = {}): Promise<Med
       fn();
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      killTreeSync(child.pid, 'SIGKILL');
       settle(() => reject(new ProbeError(`ffprobe timed out after ${formatSeconds(timeoutMs)} s`)));
     }, timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer) => {
       outBytes += chunk.length;
       if (outBytes > MAX_OUTPUT_BYTES) {
-        child.kill('SIGKILL');
+        killTreeSync(child.pid, 'SIGKILL');
         settle(() => reject(new ProbeError('ffprobe output is too large')));
         return;
       }

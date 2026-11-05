@@ -3,6 +3,7 @@
 
 import { spawn } from 'node:child_process';
 import { GenerationalAssembler } from './assembler.ts';
+import { killTree, killTreeSync } from './kill-tree.ts';
 
 export interface DecoderOptions {
   /** ffmpeg input arguments, e.g. `['-i', path]` or `['-f', 'lavfi', '-i', 'testsrc2=...']`. */
@@ -14,6 +15,12 @@ export interface DecoderOptions {
   startSec?: number;
   generation: number;
   ffmpegPath?: string;
+  /**
+   * Arguments placed before the ffmpeg argv. Empty in production. Tests use it to run a Node
+   * wrapper script that stands in for a Chocolatey or Scoop shim (`ffmpegPath` =
+   * `process.execPath`, prefix = `[script]`).
+   */
+  ffmpegPrefixArgs?: string[];
   /** Frames the assembler may queue before the pipe is paused. Default 4. */
   capacity?: number;
   /**
@@ -50,11 +57,17 @@ export interface Decoder {
    * callback is added after the end, it runs asynchronously.
    */
   onEnd(cb: (info: DecoderEndInfo) => void): void;
-  /** Idempotent. SIGTERM, then SIGKILL after 1000 ms. Resolves when the child has exited. */
+  /**
+   * Idempotent. SIGTERM, then SIGKILL after 1000 ms. Resolves when the child has exited. On
+   * Windows the whole process tree is force-killed at once, because the `ffmpeg.exe` on PATH
+   * may be a shim that starts the real ffmpeg.
+   */
   stop(): Promise<void>;
   /**
-   * Synchronous and idempotent: sends SIGKILL if the child is still alive. For exit paths
-   * where the asynchronous stop() cannot run. Does not wait for the child to exit.
+   * Synchronous and idempotent: kills the child if it is still alive (SIGKILL; on Windows
+   * the whole process tree) and closes our end of its stdout, so `onEnd` can fire even if a
+   * descendant still holds the pipe. For exit paths where the asynchronous stop() cannot run.
+   * Does not wait for the child to exit.
    */
   killNow(): void;
 }
@@ -103,7 +116,7 @@ export function createDecoder(opts: DecoderOptions): Decoder {
   const asm = new GenerationalAssembler(capacity);
   asm.start(generation, frameSize);
 
-  const child = spawn(opts.ffmpegPath ?? 'ffmpeg', argv, {
+  const child = spawn(opts.ffmpegPath ?? 'ffmpeg', [...(opts.ffmpegPrefixArgs ?? []), ...argv], {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -200,12 +213,12 @@ export function createDecoder(opts: DecoderOptions): Decoder {
       endCallbacks.push(cb);
     },
     killNow() {
-      if (exited || child.pid === undefined) return;
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // The process is already gone.
-      }
+      if (child.pid === undefined) return;
+      if (!exited) killTreeSync(child.pid, 'SIGKILL');
+      // A shim's descendant may keep the pipe open; closing our end lets the child 'close'.
+      stdout.destroy();
+      pending.length = 0;
+      fireEnd();
     },
     stop() {
       if (stopPromise !== null) return stopPromise;
@@ -221,13 +234,13 @@ export function createDecoder(opts: DecoderOptions): Decoder {
           return;
         }
         const timer = setTimeout(() => {
-          child.kill('SIGKILL');
+          void killTree(child.pid, 'SIGKILL');
         }, KILL_GRACE_MS);
         child.once('exit', () => {
           clearTimeout(timer);
           finish();
         });
-        child.kill('SIGTERM');
+        void killTree(child.pid, 'SIGTERM');
         // Closing our read end also unblocks an ffmpeg stuck writing to a full pipe.
         stdout.destroy();
       });

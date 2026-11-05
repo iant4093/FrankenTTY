@@ -24,6 +24,15 @@ function isAlive(pid: number): boolean {
   }
 }
 
+async function waitFor(cond: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (cond()) return true;
+    await sleep(5);
+  }
+  return cond();
+}
+
 /** Takes every frame until the decoder reports its end and the queue is empty. */
 async function drainToEnd(dec: Decoder): Promise<{ frames: number; end: DecoderEndInfo }> {
   let end: DecoderEndInfo | null = null;
@@ -173,7 +182,9 @@ describe.skipIf(!hasFfmpeg)('createDecoder with ffmpeg', () => {
   it('stop() also works while the pipe is paused by a full queue', async () => {
     const dec = createDecoder({ inputArgs: INFINITE, width: WIDTH, height: HEIGHT, fps: 30, generation: 1, isFile: false });
     const pid = dec.pid;
-    await sleep(700);
+    // Process start-up time varies by machine, so wait for the queue to fill.
+    expect(await waitFor(() => dec.stats().framesCompleted === 4, 20_000)).toBe(true);
+    await sleep(100);
     expect(dec.stats().framesCompleted).toBe(4);
     const started = Date.now();
     await dec.stop();
@@ -194,6 +205,8 @@ describe.skipIf(!hasFfmpeg)('createDecoder with ffmpeg', () => {
     const dec = createDecoder({
       inputArgs: INFINITE, width: WIDTH, height: HEIGHT, fps: 30, generation: 1, isFile: false, capacity,
     });
+    // Start the 100 ms ticks only once ffmpeg has produced output (start-up is slower on Windows).
+    expect(await waitFor(() => dec.stats().framesCompleted > 0, 20_000)).toBe(true);
     let taken = 0;
     for (let tick = 0; tick < 10; tick++) {
       await sleep(100);
@@ -214,7 +227,7 @@ describe.skipIf(!hasFfmpeg)('createDecoder with ffmpeg', () => {
 
   it('takeLatest returns the newest frame and drops older ones', async () => {
     const dec = createDecoder({ inputArgs: INFINITE, width: WIDTH, height: HEIGHT, fps: 30, generation: 1, isFile: false });
-    await sleep(500);
+    expect(await waitFor(() => dec.stats().framesCompleted === 4, 20_000)).toBe(true);
     const f = dec.takeLatest();
     expect(f?.length).toBe(FRAME_BYTES);
     expect(dec.stats().dropped).toBe(3);
