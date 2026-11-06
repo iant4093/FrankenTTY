@@ -32,12 +32,12 @@ jobs:
       - name: actionlint, shellcheck, zizmor and Gitleaks
         run: bash scripts/check-workflows.sh
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           languages: actions, javascript-typescript
           build-mode: none
       - name: CodeQL analysis
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
 
   test:
     name: Tests (${{ matrix.os }})
@@ -80,7 +80,7 @@ jobs:
         run: bash scripts/test.sh
       - name: Upload test logs
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-logs-${{ matrix.os }}
           path: build/logs/
@@ -104,7 +104,7 @@ jobs:
       - name: Build single executables, archives and checksums
         run: bash scripts/build-release.sh --targets all
       - name: Upload release candidate
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate
           path: release/
@@ -112,7 +112,7 @@ jobs:
           retention-days: 14
       - name: Upload build logs
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build-logs
           path: build/logs/
@@ -134,7 +134,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-candidate
           path: release
@@ -167,7 +167,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-candidate
           path: release
@@ -206,7 +206,7 @@ jobs:
         with:
           node-version: 26.13.0
           registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-candidate
           path: release
@@ -232,7 +232,7 @@ jobs:
           fi
       - name: Attest release artifacts
         if: steps.version.outputs.publish == 'true'
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release/*
       - name: Publish GitHub release
