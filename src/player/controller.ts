@@ -169,6 +169,10 @@ const SEEK_COALESCE_MS = 120;
 const SEEK_END_MARGIN_SEC = 0.5;
 /** HUD messages (seek, mode, palette) stay this long. */
 const MESSAGE_MS = 1000;
+/** The two messages that explain a picture size change by the governor stay a little longer. */
+const QUALITY_MESSAGE_MS = 1500;
+const QUALITY_SMALLER_MESSAGE = 'quality: smaller picture';
+const QUALITY_FULL_SIZE_MESSAGE = 'quality: full size';
 /** The HUD is redrawn at least this often while visible: at most 4 times per second. */
 const HUD_INTERVAL_MS = 250;
 const HUD_RETRY_MS = 30;
@@ -461,8 +465,12 @@ export function createPlayer(deps: PlayerDeps): Player {
           }
           touchHud();
           if (settings.maxCells !== curMaxCells) {
+            const previous = curMaxCells;
             curMaxCells = settings.maxCells;
             restartDecoder(false);
+            // The picture changes size: say why.
+            if (settings.maxCells === null) setMessage(QUALITY_FULL_SIZE_MESSAGE, QUALITY_MESSAGE_MS);
+            else if (previous === null || settings.maxCells < previous) setMessage(QUALITY_SMALLER_MESSAGE, QUALITY_MESSAGE_MS);
           }
         };
 
@@ -879,6 +887,18 @@ export function createPlayer(deps: PlayerDeps): Player {
           seekTimer = setTimeout(applySeek, SEEK_COALESCE_MS);
         };
 
+        /**
+         * A new mode or palette costs a different amount per frame, so the governor forgets its samples
+         * and drops any cell cap at once (the picture returns to full size) and measures again. A cap
+         * removal restarts the decoder, which also repaints a paused screen; otherwise repaint it here.
+         * A "quality: full size" message from the governor replaces the mode or palette message.
+         */
+        const resetQuality = (): void => {
+          const starts = counters.decoderStarts;
+          governor?.reset(now());
+          if (paused && counters.decoderStarts === starts) repaintPaused();
+        };
+
         const cycleMode = (): void => {
           const from = MODE_ORDER.indexOf(mode);
           for (let step = 1; step <= MODE_ORDER.length; step++) {
@@ -889,15 +909,15 @@ export function createPlayer(deps: PlayerDeps): Player {
             }
           }
           pipeline?.setMode(mode);
-          if (paused) repaintPaused();
           setMessage(`mode ${mode}`);
+          resetQuality();
         };
 
         const cyclePalette = (): void => {
           palette = PALETTES[(PALETTES.indexOf(palette) + 1) % PALETTES.length] as Palette;
           pipeline?.setPalette(palette);
-          if (paused) repaintPaused();
           setMessage(`palette ${palette}`);
+          resetQuality();
         };
 
         const onKey = (key: KeyEvent): void => {

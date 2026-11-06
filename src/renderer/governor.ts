@@ -9,6 +9,23 @@
 //   caps of base * 0.8^k (k = 1..5), the last one clamped to `minCells`.
 // When the base depth is already 8 or 4 the 256-color step does not exist, so the cell caps move
 // up one level number.
+//
+// Hysteresis. Color levels (no cell cap) change the bytes per frame and nothing else, so they are
+// cheap to enter and leave. Cell-cap levels change the geometry: the picture gets smaller, the
+// decoder restarts and the screen is cleared. They need stronger evidence, in both directions:
+//
+//                       color levels (0..depth step)      cap levels (maxCells set)
+//   step down (L -> L+1)  p90 > 0.9 x budget, window 1 s    p90 > 0.9 x budget at every sample for 3 s
+//   step up   (L -> L-1)  p90 < 0.5 x budget for 3 s        p90 < 0.75 x budget for 2 s
+//
+// "Step down into or within cap levels" means the target level L+1 is a cap level. "Step up out of a
+// cap level" means the current level L is a cap level. The p90 is over the last 1 s of samples in
+// both cases. Every level change starts a 1 s cooldown and an empty window, so each cap step takes at
+// least 1 s + 3 s of fresh samples.
+//
+// A mode or palette change calls `reset()`: the sample window and both streaks are cleared and a cap
+// is dropped at once (down to the depth step at most), because the new mode has a different cost and
+// has to be measured from scratch.
 
 export type ColorDepth = 24 | 8 | 4;
 
@@ -26,6 +43,10 @@ export interface GovernorOptions {
   upAfterMs?: number;
   /** Minimum time between level changes; samples inside it are ignored. Default 1000. */
   cooldownMs?: number;
+  /** p90 must stay over budget this long before a step down INTO or WITHIN the cell-cap levels. Default 3000. */
+  capDownAfterMs?: number;
+  /** p90 must stay under 0.75 of the budget this long before a step up OUT OF a cell-cap level. Default 2000. */
+  capUpAfterMs?: number;
 }
 
 export interface QualitySettings {
@@ -50,7 +71,13 @@ export interface Governor {
   settings(): QualitySettings;
   /** Settings for any level in [0, maxLevel()]. */
   settingsAt(level: number): QualitySettings;
-  /** Fires only when the level changes. */
+  /**
+   * The mode or palette changed: forget the samples and the streaks, and drop any cell cap at once
+   * (to the last level without a cap, the depth step at most). Levels below that stay. A level
+   * change made here fires onChange and starts the cooldown like any other.
+   */
+  reset(atMs: number): void;
+  /** Fires only when the level changes. May jump several levels when it comes from `reset`. */
   onChange(cb: GovernorListener): void;
 }
 
@@ -63,6 +90,8 @@ export const MAX_CELL_STEPS = 5;
 const MIN_SAMPLES = 5;
 const DOWN_FRACTION = 0.9;
 const UP_FRACTION = 0.5;
+/** Step-up threshold out of a cell-cap level (see the hysteresis table above). */
+export const CAP_UP_FRACTION = 0.75;
 const SKIP_BUDGETS = 2;
 
 function buildLevels(
@@ -105,14 +134,20 @@ export function createGovernor(options: GovernorOptions): Governor {
   const windowMs = options.windowMs ?? 1000;
   const upAfterMs = options.upAfterMs ?? 3000;
   const cooldownMs = options.cooldownMs ?? 1000;
+  const capDownAfterMs = options.capDownAfterMs ?? 3000;
+  const capUpAfterMs = options.capUpAfterMs ?? 2000;
 
   const budget = 1000 / fps;
   const downAbove = DOWN_FRACTION * budget;
   const upBelow = UP_FRACTION * budget;
+  const capUpBelow = CAP_UP_FRACTION * budget;
   const skipSample = SKIP_BUDGETS * budget;
 
   const levels = buildLevels(baseThreshold, baseDepth, baseCells, minCells);
   const top = levels.length - 1;
+  const firstCap = levels.findIndex((l) => l.maxCells !== null);
+  /** The last level without a cell cap. */
+  const uncappedTop = firstCap === -1 ? top : firstCap - 1;
 
   const capacity = Math.max(MIN_SAMPLES, Math.ceil((fps * windowMs) / 1000) * 2);
   const times = new Float64Array(capacity);
@@ -125,6 +160,7 @@ export function createGovernor(options: GovernorOptions): Governor {
   let lastChangeAt = -Infinity;
   let lastSampleAt = -Infinity;
   let underSince = Number.NaN; // NaN = no low-p90 streak running
+  let overSince = Number.NaN; // NaN = no over-budget streak running
   const listeners: GovernorListener[] = [];
 
   function clearWindow(): void {
@@ -169,6 +205,7 @@ export function createGovernor(options: GovernorOptions): Governor {
     current = to;
     lastChangeAt = atMs;
     underSince = Number.NaN;
+    overSince = Number.NaN;
     clearWindow();
     const s = levels[current] as QualitySettings;
     for (const cb of listeners) cb(s, current);
@@ -184,15 +221,24 @@ export function createGovernor(options: GovernorOptions): Governor {
     prune(atMs);
     if (count < MIN_SAMPLES) {
       underSince = Number.NaN;
+      overSince = Number.NaN;
       return;
     }
     const p = p90();
     if (p > downAbove) {
       underSince = Number.NaN;
-      if (current < top) change(current + 1, atMs);
-    } else if (p < upBelow) {
+      if (Number.isNaN(overSince)) overSince = atMs;
+      if (current < top) {
+        const intoCap = (levels[current + 1] as QualitySettings).maxCells !== null;
+        if (!intoCap || atMs - overSince >= capDownAfterMs) change(current + 1, atMs);
+      }
+      return;
+    }
+    overSince = Number.NaN;
+    const inCap = (levels[current] as QualitySettings).maxCells !== null;
+    if (p < (inCap ? capUpBelow : upBelow)) {
       if (Number.isNaN(underSince)) underSince = atMs;
-      if (current > 0 && atMs - underSince >= upAfterMs) change(current - 1, atMs);
+      if (current > 0 && atMs - underSince >= (inCap ? capUpAfterMs : upAfterMs)) change(current - 1, atMs);
     } else {
       underSince = Number.NaN;
     }
@@ -208,6 +254,15 @@ export function createGovernor(options: GovernorOptions): Governor {
     level: () => current,
     maxLevel: () => top,
     settings: () => levels[current] as QualitySettings,
+    reset(atMs) {
+      if (!enabled) return;
+      const at = Number.isFinite(atMs) && atMs > lastSampleAt ? atMs : lastSampleAt;
+      lastSampleAt = at;
+      underSince = Number.NaN;
+      overSince = Number.NaN;
+      clearWindow();
+      if (current > uncappedTop) change(uncappedTop, at);
+    },
     settingsAt(level) {
       const s = levels[level];
       if (s === undefined) throw new RangeError(`governor level ${level} out of range 0..${top}`);

@@ -6,11 +6,13 @@ import {
   detectColorDepth,
   detectUnicode,
   installCommand,
+  PROBE_REQUEST_WITHOUT_DECRQM,
   resolveCellAspect,
   runProbe,
+  skipsDecrqm,
 } from '../../src/term/capabilities.ts';
 import type { ProbeInput, ProbeOutput } from '../../src/term/capabilities.ts';
-import { PROBE_REQUEST } from '../../src/renderer/sequences.ts';
+import { PROBE_DECRQM_2026, PROBE_REQUEST } from '../../src/renderer/sequences.ts';
 
 // Apple Terminal 488 on macOS 27 (docs/EVIDENCE.md).
 const APPLE_ENV_NO_COLORTERM = { TERM: 'xterm-256color', TERM_PROGRAM: 'Apple_Terminal' };
@@ -383,5 +385,53 @@ describe('[REQ-CAP-02] runProbe', () => {
     s.emit(Buffer.from('q\x1b[?1;2c'));
     const r = await promise;
     expect(Buffer.from(r.passthrough).toString('latin1')).toBe('q');
+  });
+
+  it('[REQ-CAP-02] sends the full probe when TERM_PROGRAM is not Apple_Terminal', async () => {
+    for (const env of [{}, { TERM_PROGRAM: 'iTerm.app' }, { TERM_PROGRAM: 'vscode', TERM: 'xterm-256color' }]) {
+      const s = fakeStdin();
+      const o = fakeStdout();
+      const promise = runProbe(s.stdin, o.stdout, 1000, env);
+      expect(o.writes).toEqual([PROBE_REQUEST]);
+      expect(o.writes[0]).toContain('$p');
+      s.emit(Buffer.from('\x1b[?2026;2$y\x1b[?1;2c'));
+      const r = await promise;
+      expect(r.sync2026).toBe('supported');
+    }
+  });
+
+  it('[REQ-CAP-02] Apple Terminal: no DECRQM query is sent, sync2026 is unsupported, the other replies are read', async () => {
+    const s = fakeStdin();
+    const o = fakeStdout();
+    const promise = runProbe(s.stdin, o.stdout, 1000, { TERM_PROGRAM: 'Apple_Terminal' });
+    expect(o.writes).toEqual([PROBE_REQUEST_WITHOUT_DECRQM]);
+    expect(o.writes[0]).not.toContain(PROBE_DECRQM_2026);
+    expect(o.writes[0]).not.toContain('$p');
+    expect(o.writes[0]).toContain('\x1b[16t');
+    expect(o.writes[0]).toContain('\x1b[14t');
+    expect(o.writes[0]?.endsWith('\x1b[c')).toBe(true);
+    s.emit(Buffer.from('\x1b[4;717;1245t\x1b[?1;2c'));
+    const r = await promise;
+    expect(r.sync2026).toBe('unsupported');
+    expect(r.done).toBe(true);
+    expect(r.replied).toBe(true);
+    expect(r.windowPx).toEqual({ w: 1245, h: 717 });
+    expect(s.listenerCount()).toBe(0);
+  });
+
+  it('[REQ-CAP-02] Apple Terminal: a timeout still reports unsupported, with no reply', async () => {
+    const s = fakeStdin();
+    const o = fakeStdout();
+    const r = await runProbe(s.stdin, o.stdout, 20, { TERM_PROGRAM: 'Apple_Terminal' });
+    expect(r.sync2026).toBe('unsupported');
+    expect(r.done).toBe(false);
+    expect(r.replied).toBe(false);
+  });
+
+  it('[REQ-CAP-02] skipsDecrqm is true for Apple Terminal only', () => {
+    expect(skipsDecrqm({ TERM_PROGRAM: 'Apple_Terminal' })).toBe(true);
+    expect(skipsDecrqm({ TERM_PROGRAM: 'iTerm.app' })).toBe(false);
+    expect(skipsDecrqm({ TERM_PROGRAM: 'apple_terminal' })).toBe(false);
+    expect(skipsDecrqm({})).toBe(false);
   });
 });

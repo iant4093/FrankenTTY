@@ -275,6 +275,218 @@ describe('[REQ-PERF-01] stepping up', () => {
   });
 });
 
+/** Feeds `frameMs` samples until the governor reaches `level`. Returns the time after the change. */
+function driveTo(gov: Governor, level: number, frameMs = 100): number {
+  let t = 0;
+  while (gov.level() < level) {
+    gov.record(frameMs, t);
+    t += STEP;
+    if (t > 120_000) throw new Error(`never reached level ${String(level)}`);
+  }
+  return t;
+}
+
+describe('[REQ-PERF-01] cell-cap hysteresis', () => {
+  // Level 3 is the 256-color step (24-bit base); level 4 is the first cell cap.
+
+  it('enters the first cell-cap level only after 3 s over budget, measured after the cooldown', () => {
+    const g = createGovernor(BASE);
+    let t = driveTo(g, 3);
+    const level3At = t - STEP;
+    let enteredAt = -1;
+    g.onChange((s, level) => {
+      if (level === 4) enteredAt = t;
+      expect(s.maxCells).not.toBeNull();
+    });
+    for (; t < level3At + 8000 && enteredAt < 0; t += STEP) g.record(100, t);
+    expect(enteredAt).toBeGreaterThanOrEqual(level3At + 1000 + 3000);
+    expect(enteredAt).toBeLessThan(level3At + 1000 + 3000 + 6 * STEP);
+  });
+
+  it('color levels still step down within 1 s windows', () => {
+    const g = createGovernor(BASE);
+    const t = driveTo(g, 3);
+    expect(t).toBeLessThan(3 * 1000 + 10 * STEP);
+  });
+
+  it('an over-budget burst shorter than 3 s never enters a cap, and the streak starts over after it', () => {
+    const g = createGovernor(BASE);
+    let t = driveTo(g, 3);
+    const entries: number[] = [];
+    g.onChange((s, level) => {
+      if (s.maxCells !== null) entries.push(level);
+    });
+    t = feed(g, t, 1000 + 1500, 100); // 1.5 s over budget after the cooldown
+    t = feed(g, t, 1500, 0.7 * BUDGET); // the window fills with p90 between 0.5 and 0.9: the streak ends, no step either way
+    expect(g.level()).toBe(3);
+    t = feed(g, t, 2500, 100); // a new streak of 2.5 s: together with the first one it would pass 3 s
+    expect(entries).toEqual([]);
+    feed(g, t, 1500, 100); // the new streak passes 3 s
+    expect(entries).toEqual([4]);
+  });
+
+  it('steps down WITHIN cap levels only after 3 s over budget as well', () => {
+    const g = createGovernor(BASE);
+    let t = driveTo(g, 4);
+    const level4At = t - STEP;
+    let level5At = -1;
+    g.onChange((_s, level) => {
+      if (level === 5) level5At = t;
+    });
+    for (; t < level4At + 8000 && level5At < 0; t += STEP) g.record(100, t);
+    expect(level5At).toBeGreaterThanOrEqual(level4At + 4000);
+  });
+
+  it('leaves a cap level after 2 s under 0.75 of the budget, then waits for 0.5 / 3 s at the color levels', () => {
+    const g = createGovernor(BASE);
+    let t = driveTo(g, 4);
+    const level4At = t - STEP;
+    const changes: { level: number; at: number }[] = [];
+    g.onChange((_s, level) => changes.push({ level, at: t }));
+    for (; t < level4At + 12_000; t += STEP) g.record(0.7 * BUDGET, t);
+    // 0.7 is under 0.75 (leaves the cap) but over 0.5 (stays at the 256-color step).
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.level).toBe(3);
+    expect(changes[0]?.at as number).toBeGreaterThanOrEqual(level4At + 1000 + 2000);
+    expect(changes[0]?.at as number).toBeLessThan(level4At + 1000 + 2000 + 6 * STEP);
+    expect(g.settings().maxCells).toBeNull();
+  });
+
+  it('stays in a cap level while p90 sits between 0.75 and 0.9 of the budget', () => {
+    const g = createGovernor(BASE);
+    const t = driveTo(g, 4);
+    feed(g, t, 30_000, 0.85 * BUDGET);
+    expect(g.level()).toBe(4);
+  });
+
+  it('honors capDownAfterMs and capUpAfterMs', () => {
+    const g = createGovernor({ ...BASE, capDownAfterMs: 500, capUpAfterMs: 500 });
+    const t = driveTo(g, 4);
+    expect(t).toBeLessThan(3 * 1000 + 1000 + 500 + 20 * STEP);
+    feed(g, t, 3000, 0.7 * BUDGET);
+    expect(g.level()).toBe(3);
+  });
+});
+
+describe('[REQ-PERF-01] reset (mode or palette change)', () => {
+  it('drops the cell cap at once: from any cap level to the 256-color step', () => {
+    for (const target of [4, 6, 8]) {
+      const g = createGovernor(BASE);
+      const t = driveTo(g, target);
+      const seen: { level: number; maxCells: number | null }[] = [];
+      g.onChange((s, level) => seen.push({ level, maxCells: s.maxCells }));
+      g.reset(t);
+      expect(g.level()).toBe(3);
+      expect(g.settings()).toEqual({ threshold: 24, depth: 8, maxCells: null });
+      expect(seen).toEqual([{ level: 3, maxCells: null }]);
+    }
+  });
+
+  it('with a 256-color base the depth step is level 2', () => {
+    const g = createGovernor({ ...BASE, baseDepth: 8 });
+    const t = driveTo(g, 5);
+    expect(g.settings().maxCells).not.toBeNull();
+    g.reset(t);
+    expect(g.level()).toBe(2);
+    expect(g.settings().maxCells).toBeNull();
+  });
+
+  it('keeps levels that have no cap and fires nothing', () => {
+    for (const target of [0, 1, 2, 3]) {
+      const g = createGovernor(BASE);
+      const t = target === 0 ? 0 : driveTo(g, target);
+      let calls = 0;
+      g.onChange(() => calls++);
+      g.reset(t);
+      expect(g.level()).toBe(target);
+      expect(calls).toBe(0);
+    }
+  });
+
+  it('forgets the samples: four slow samples before and one after do not make a step', () => {
+    const g = createGovernor(BASE);
+    for (let i = 0; i < 4; i++) g.record(100, i * STEP);
+    g.reset(4 * STEP);
+    g.record(100, 5 * STEP);
+    expect(g.level()).toBe(0);
+    for (let i = 6; i < 9; i++) g.record(100, i * STEP);
+    expect(g.level()).toBe(0);
+    g.record(100, 9 * STEP); // the fifth sample after the reset
+    expect(g.level()).toBe(1);
+  });
+
+  it('forgets a running over-budget streak', () => {
+    const g = createGovernor(BASE);
+    let t = driveTo(g, 3);
+    t = feed(g, t, 1000 + 2800, 100); // 2.8 s into the streak that would enter level 4
+    expect(g.level()).toBe(3);
+    g.reset(t);
+    feed(g, t, 2500, 100); // would have crossed 3 s without the reset
+    expect(g.level()).toBe(3);
+  });
+
+  it('starts the cooldown when it changes the level, not otherwise', () => {
+    const g = createGovernor(BASE);
+    const t = driveTo(g, 5);
+    g.reset(t);
+    expect(g.level()).toBe(3);
+    // Five slow samples inside the cooldown are ignored.
+    for (let i = 0; i < 5; i++) g.record(100, t + i * 100);
+    expect(g.level()).toBe(3);
+    // No change at level 0: the first five slow samples step at once.
+    const h = createGovernor(BASE);
+    h.reset(0);
+    for (let i = 0; i < 5; i++) h.record(100, i * STEP);
+    expect(h.level()).toBe(1);
+  });
+
+  it('does nothing when the governor is disabled', () => {
+    const g = createGovernor({ ...BASE, enabled: false });
+    let calls = 0;
+    g.onChange(() => calls++);
+    g.reset(100);
+    expect(g.level()).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  it('tolerates a timestamp that runs backwards or is not finite', () => {
+    const g = createGovernor(BASE);
+    const t = driveTo(g, 5);
+    expect(() => g.reset(Number.NaN)).not.toThrow();
+    expect(g.level()).toBe(3);
+    expect(() => g.reset(t - 10_000)).not.toThrow();
+    expect(g.level()).toBe(3);
+  });
+});
+
+describe('[REQ-PERF-01] simulation: braille is slower than half-block (Ian\'s Apple Terminal report)', () => {
+  const BRAILLE_MS = 50; // over the 33.3 ms budget
+  const HALFBLOCK_MS = 28; // 0.84 of the budget: between the 0.75 and 0.9 hysteresis marks
+
+  function run(g: Governor, from: number, seconds: number, frameMs: number): number {
+    return feed(g, from, seconds * 1000, frameMs);
+  }
+
+  it('without reset the picture stays small after cycling back to half-block', () => {
+    const g = createGovernor(BASE);
+    const t = run(g, 0, 15, BRAILLE_MS);
+    expect(g.settings().maxCells).not.toBeNull();
+    run(g, t, 30, HALFBLOCK_MS);
+    expect(g.settings().maxCells).not.toBeNull();
+  });
+
+  it('with reset on the mode change the picture is full size at once and stays there', () => {
+    const g = createGovernor(BASE);
+    const t = run(g, 0, 15, BRAILLE_MS);
+    expect(g.settings().maxCells).not.toBeNull();
+    g.reset(t);
+    expect(g.settings().maxCells).toBeNull();
+    run(g, t, 30, HALFBLOCK_MS);
+    expect(g.settings().maxCells).toBeNull();
+    expect(g.level()).toBe(3); // 28 ms is over 0.5 of the budget: the 256-color step stays
+  });
+});
+
 describe('[REQ-PERF-01] enabled = false (--quality max)', () => {
   it('stays at level 0 under overload', () => {
     const g = createGovernor({ ...BASE, enabled: false });

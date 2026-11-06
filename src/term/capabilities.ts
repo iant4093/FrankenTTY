@@ -1,5 +1,12 @@
 import type { ColorFlag } from '../cli/args.ts';
-import { CSI_BYTE, ESC_BYTE, PROBE_REQUEST } from '../renderer/sequences.ts';
+import {
+  CSI_BYTE,
+  ESC_BYTE,
+  PROBE_CELL_SIZE,
+  PROBE_DA1,
+  PROBE_REQUEST,
+  PROBE_WINDOW_SIZE,
+} from '../renderer/sequences.ts';
 
 // ---------------------------------------------------------------------------
 // Color depth (REQ-CAP-01)
@@ -277,6 +284,19 @@ export interface ProbeOutput {
 
 export type ProbeOutcome = ProbeResult & { cellAspect: number | null };
 
+/** The probe without the DECRQM 2026 query: cell size, window size, DA1. */
+export const PROBE_REQUEST_WITHOUT_DECRQM = PROBE_CELL_SIZE + PROBE_WINDOW_SIZE + PROBE_DA1;
+
+/**
+ * True when the DECRQM 2026 query must not be sent. Apple Terminal (488, measured in
+ * docs/EVIDENCE.md) does not implement DECRQM and prints the final byte "p" at the cursor, which
+ * stays on screen until something repaints that cell. It does not support mode 2026 either, so the
+ * answer is known without asking.
+ */
+export function skipsDecrqm(env: Env): boolean {
+  return env['TERM_PROGRAM'] === 'Apple_Terminal';
+}
+
 /** Cell height/width from the cell size, else from the window size and grid. */
 export function deriveCellAspect(
   probe: Pick<ProbeResult, 'cellPx' | 'windowPx'>,
@@ -294,9 +314,16 @@ export function deriveCellAspect(
 
 /**
  * Writes the probe once and reads stdin until the DA1 reply or `timeoutMs`.
- * The data listener is removed before the promise resolves.
+ * The data listener is removed before the promise resolves. With `skipsDecrqm(env)` the DECRQM query
+ * is left out and `sync2026` is `unsupported`; the other replies are read as usual.
  */
-export function runProbe(stdin: ProbeInput, stdout: ProbeOutput, timeoutMs = 200): Promise<ProbeOutcome> {
+export function runProbe(
+  stdin: ProbeInput,
+  stdout: ProbeOutput,
+  timeoutMs = 200,
+  env: Env = {},
+): Promise<ProbeOutcome> {
+  const skipSync = skipsDecrqm(env);
   return new Promise((resolve) => {
     const parser = new ProbeParser();
     let settled = false;
@@ -307,7 +334,11 @@ export function runProbe(stdin: ProbeInput, stdout: ProbeOutput, timeoutMs = 200
       clearTimeout(timer);
       stdin.removeListener('data', onData);
       const result = parser.result();
-      resolve({ ...result, cellAspect: deriveCellAspect(result, stdout.columns, stdout.rows) });
+      resolve({
+        ...result,
+        ...(skipSync ? { sync2026: 'unsupported' as const } : {}),
+        cellAspect: deriveCellAspect(result, stdout.columns, stdout.rows),
+      });
     };
 
     const onData = (chunk: Uint8Array | string): void => {
@@ -320,7 +351,7 @@ export function runProbe(stdin: ProbeInput, stdout: ProbeOutput, timeoutMs = 200
     const timer = setTimeout(finish, timeoutMs);
     stdin.on('data', onData);
     stdin.resume();
-    stdout.write(PROBE_REQUEST);
+    stdout.write(skipSync ? PROBE_REQUEST_WITHOUT_DECRQM : PROBE_REQUEST);
   });
 }
 

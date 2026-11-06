@@ -14,6 +14,7 @@ import { ProbeError, probe as probeInput } from './ingest/probe.ts';
 import { createPlayer } from './player/controller.ts';
 import { effectiveMode } from './player/pipeline.ts';
 import { DEFAULT_CELL_ASPECT } from './renderer/geometry.ts';
+import { CLEAR } from './renderer/sequences.ts';
 import { detectColorDepth, detectUnicode, installCommand, resolveCellAspect, runProbe } from './term/capabilities.ts';
 import { createScreen, installExitTraps } from './term/screen.ts';
 
@@ -225,7 +226,10 @@ async function run(argv: string[]): Promise<number> {
   let code: number;
   let failure: string | null;
   try {
-    const probe = await runProbe(process.stdin, process.stdout);
+    const probe = await runProbe(process.stdin, process.stdout, undefined, process.env);
+    // A terminal that does not know one of the probe queries may have printed a stray character
+    // (Apple Terminal prints "p" for DECRQM). Letterboxed frames never paint that cell, so clear.
+    process.stdout.write(CLEAR);
     const unicode = detectUnicode(process.env, process.platform);
     const audio = useAudio ? createAudioPlayer({ inputArgs: media.audioInputArgs, now: monotonicNow }) : null;
     const player = createPlayer({

@@ -6,6 +6,10 @@ import type { Governor, GovernorOptions } from '../../src/renderer/governor.ts';
 const WINDOW = 1000;
 const UP_AFTER = 3000;
 const COOLDOWN = 1000;
+/** Hysteresis of the cell-cap levels (src/renderer/governor.ts header). */
+const CAP_DOWN_AFTER = 3000;
+const CAP_UP_AFTER = 2000;
+const CAP_UP_FRACTION = 0.75;
 
 const config = fc.record({
   fps: fc.integer({ min: 10, max: 60 }),
@@ -89,9 +93,14 @@ function p90Of(values: number[]): number {
 
 const blocks = fc.array(block, { minLength: 1, maxLength: 20 });
 
+/** A reset (mode change) is drawn after a sample when its draw is below RESET_RATE of 1000. */
+const RESET_RATE = 6;
+const resetDraws = fc.array(fc.integer({ min: 0, max: 999 }), { minLength: 300, maxLength: 300 });
+
 describe('[REQ-PERF-01] governor properties', () => {
   let increasesSeen = 0;
   let decreasesSeen = 0;
+  let capLeavesSeen = 0;
 
   it('(a) level stays in [0, maxLevel]; disabled stays at 0', () => {
     fc.assert(
@@ -129,7 +138,7 @@ describe('[REQ-PERF-01] governor properties', () => {
     );
   });
 
-  it('(c) a level increase only follows upAfterMs of sustained low p90', () => {
+  it('(c) a level increase only follows a sustained low p90 (0.5 for 3 s; out of a cap level 0.75 for 2 s)', () => {
     fc.assert(
       fc.property(config, blocks, (c, bs) => {
         const budget = 1000 / c.fps;
@@ -146,17 +155,22 @@ describe('[REQ-PERF-01] governor properties', () => {
             lastChange = s.at;
           } else {
             increasesSeen++;
-            // The streak cannot start before the cooldown ends, and must last upAfterMs.
-            if (s.at - lastChange < COOLDOWN + UP_AFTER) return false;
-            // Every window ending in the last (upAfterMs - windowMs) has p90 under half the budget.
-            for (let j = i; j >= 0 && (samples[j] as Sample).at >= s.at - (UP_AFTER - WINDOW); j--) {
+            if (g.settingsAt(previous).maxCells !== null) capLeavesSeen++;
+            // Leaving a cell-cap level takes less evidence than leaving a color level.
+            const leftCap = g.settingsAt(previous).maxCells !== null;
+            const fraction = leftCap ? CAP_UP_FRACTION : 0.5;
+            const upAfter = leftCap ? CAP_UP_AFTER : UP_AFTER;
+            // The streak cannot start before the cooldown ends, and must last upAfter.
+            if (s.at - lastChange < COOLDOWN + upAfter) return false;
+            // Every window ending in the last (upAfter - windowMs) has p90 under `fraction` of the budget.
+            for (let j = i; j >= 0 && (samples[j] as Sample).at >= s.at - (upAfter - WINDOW); j--) {
               const end = (samples[j] as Sample).at;
               const inWindow: number[] = [];
               for (let k = j; k >= 0 && (samples[k] as Sample).at > end - WINDOW; k--) {
                 const w = samples[k] as Sample;
                 inWindow.push(w.skip ? 2 * budget : w.ms);
               }
-              if (inWindow.length < 5 || !(p90Of(inWindow) < 0.5 * budget)) return false;
+              if (inWindow.length < 5 || !(p90Of(inWindow) < fraction * budget)) return false;
             }
             lastChange = s.at;
             decreasesSeen++;
@@ -185,7 +199,12 @@ describe('[REQ-PERF-01] governor properties', () => {
         (c, seed) => {
           const budget = 1000 / c.fps;
           const g = createGovernor(options(c));
-          const bound = g.maxLevel() * (COOLDOWN + WINDOW);
+          // A color step needs a fresh window; a cell-cap step also needs CAP_DOWN_AFTER over budget.
+          let capSteps = 0;
+          for (let level = 1; level <= g.maxLevel(); level++) {
+            if (g.settingsAt(level).maxCells !== null) capSteps++;
+          }
+          const bound = g.maxLevel() * (COOLDOWN + WINDOW) + capSteps * CAP_DOWN_AFTER;
           let t = 0;
           let i = 0;
           let previous = 0;
@@ -257,5 +276,105 @@ describe('[REQ-PERF-01] governor properties', () => {
       }),
       { numRuns: 1000 },
     );
+  });
+
+  it('(c) sanity: leaving a cell-cap level at 0.75 happens in the generator', () => {
+    expect(capLeavesSeen).toBeGreaterThan(20);
+  });
+
+  it('(f) a mode change never leaves maxCells set, keeps lower levels, and the next 4 samples change nothing', () => {
+    let resets = 0;
+    let capDrops = 0;
+    fc.assert(
+      fc.property(config, blocks, resetDraws, fc.boolean(), (c, bs, draws, enabled) => {
+        const g = createGovernor(options(c, enabled));
+        let uncappedTop = g.maxLevel();
+        for (let level = 0; level <= g.maxLevel(); level++) {
+          if (g.settingsAt(level).maxCells !== null) {
+            uncappedTop = level - 1;
+            break;
+          }
+        }
+        const samples = expand(bs, c.fps);
+        let quiet = 0; // samples still to check after a reset
+        let levelAtReset = 0;
+        for (let i = 0; i < samples.length; i++) {
+          const s = samples[i] as Sample;
+          feedSample(g, s);
+          if (quiet > 0) {
+            if (i > 0 && g.level() !== levelAtReset) return false;
+            quiet--;
+          }
+          if ((draws[i % draws.length] as number) >= RESET_RATE) continue;
+          const before = g.level();
+          let fired = 0;
+          g.onChange(() => fired++);
+          g.reset(s.at);
+          resets++;
+          const after = g.level();
+          if (g.settings().maxCells !== null) return false;
+          if (after > uncappedTop) return false;
+          if (before <= uncappedTop && (after !== before || fired !== 0)) return false;
+          if (before > uncappedTop) {
+            capDrops++;
+            if (after !== uncappedTop || fired !== 1) return false;
+          }
+          if (!enabled && after !== 0) return false;
+          levelAtReset = after;
+          quiet = 4;
+        }
+        return true;
+      }),
+      { numRuns: 1000 },
+    );
+    expect(resets).toBeGreaterThan(1000);
+    expect(capDrops).toBeGreaterThan(20);
+  });
+
+  it('(g) a cell-cap level is entered only after p90 stayed over 0.9 of the budget for the last 3 s', () => {
+    let entries = 0;
+    fc.assert(
+      fc.property(config, blocks, resetDraws, (c, bs, draws) => {
+        const budget = 1000 / c.fps;
+        const g = createGovernor(options(c));
+        const samples = expand(bs, c.fps);
+        let previous = 0;
+        // Samples before this time were ignored by the governor (cooldown after a change, or cleared by a reset).
+        let acceptFrom = -Infinity;
+        const valueOf = (w: Sample): number => (w.skip ? 2 * budget : w.ms);
+        for (let i = 0; i < samples.length; i++) {
+          const s = samples[i] as Sample;
+          feedSample(g, s);
+          let now = g.level();
+          if (now !== previous) {
+            if (now > previous && g.settingsAt(now).maxCells !== null) {
+              entries++;
+              // Every 1 s window ending in the last 3 s is over budget.
+              for (let j = i; j >= 0 && (samples[j] as Sample).at >= s.at - CAP_DOWN_AFTER; j--) {
+                const end = (samples[j] as Sample).at;
+                if (end < acceptFrom) return false;
+                const inWindow: number[] = [];
+                for (let k = j; k >= 0 && (samples[k] as Sample).at > end - WINDOW; k--) {
+                  if ((samples[k] as Sample).at < acceptFrom) break;
+                  inWindow.push(valueOf(samples[k] as Sample));
+                }
+                if (inWindow.length < 5 || !(p90Of(inWindow) > 0.9 * budget)) return false;
+              }
+            }
+            acceptFrom = s.at + COOLDOWN;
+            previous = now;
+          }
+          if ((draws[i % draws.length] as number) < RESET_RATE) {
+            g.reset(s.at);
+            now = g.level();
+            acceptFrom = now !== previous ? s.at + COOLDOWN : Math.max(acceptFrom, s.at + 0.001);
+            previous = now;
+          }
+        }
+        return true;
+      }),
+      { numRuns: 1000 },
+    );
+    expect(entries).toBeGreaterThan(20);
   });
 });
