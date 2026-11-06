@@ -1,0 +1,29 @@
+{
+  "name": "frankentty-video",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Remotion project for the FrankenTTY demo video. Separate from the root package; never imported by src/.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "prebuild": "node scripts/prebuild.mjs",
+    "studio": "npm run prebuild && remotion studio src/index.ts",
+    "render": "npm run prebuild && remotion render src/index.ts FrankenTTYDemo ../build/render.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "still": "npm run prebuild && node scripts/still.mjs",
+    "stills": "npm run prebuild && node scripts/still.mjs --review",
+    "test": "node --test tests/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@remotion/cli": "4.0.541",
+    "@xterm/xterm": "6.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.541"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3"
+  }
+}
