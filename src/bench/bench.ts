@@ -30,7 +30,6 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Mode, Palette } from '../cli/args.ts';
 import { createDecoder } from '../ingest/decoder.ts';
-import type { Decoder } from '../ingest/decoder.ts';
 import type { MediaInfo } from '../ingest/media-info.ts';
 import { createPipeline } from '../player/pipeline.ts';
 import type { ColorDepth } from '../renderer/cells.ts';
@@ -108,22 +107,22 @@ function percentile(sorted: Float64Array, n: number, p: number): number {
   return sorted[rank - 1] ?? 0;
 }
 
-function lastLine(text: string): string {
+export function lastLine(text: string): string {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
   return lines[lines.length - 1] ?? '';
 }
 
-/** Kills the decoder if the process dies mid-run (REQ-TERM-03 applies to child processes too). */
-function installKillTraps(decoder: Decoder): () => void {
+/** Calls `kill` if the process dies mid-run (REQ-TERM-03 applies to child processes too). Returns the remover. */
+export function installKillTraps(kill: () => void): () => void {
   const onExit = (): void => {
-    decoder.killNow();
+    kill();
   };
   const onSigint = (): void => {
-    decoder.killNow();
+    kill();
     process.exit(130);
   };
   const onSigterm = (): void => {
-    decoder.killNow();
+    kill();
     process.exit(143);
   };
   process.once('exit', onExit);
@@ -178,7 +177,9 @@ export async function runBench(params: BenchParams): Promise<BenchReport> {
     generation: 1,
     isFile: params.isFile,
   });
-  const removeTraps = installKillTraps(decoder);
+  const removeTraps = installKillTraps(() => {
+    decoder.killNow();
+  });
   let ended = false;
   let endDetail = '';
   decoder.onEnd((info) => {

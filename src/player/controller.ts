@@ -97,6 +97,17 @@ export interface PlayerDeps {
   braille?: boolean;
   /** Bytes read from stdin before playback started (for example `probe.passthrough`); handled as keys first. */
   initialInput?: Uint8Array;
+  /**
+   * Chooses the media inputs for the next segment. Called every time a video decoder starts (start,
+   * seek, loop, resize, cell-cap change, paused repaint). The video decoder uses `videoArgs`; when the
+   * audio source starts in the same segment (start, seek, loop) it uses `audioArgs` from the SAME call,
+   * so one segment never mixes inputs. A resize or cell-cap change restarts only the video: the audio
+   * source keeps running. When absent, `inputArgs` is used for video and the audio player keeps the
+   * arguments it was created with.
+   */
+  resolveInput?: () => { videoArgs: string[]; audioArgs: string[] };
+  /** Text appended to the HUD message of each seek (for example "preparing seek cache..."), or null for none. */
+  seekNotice?: () => string | null;
 }
 
 export interface PlayerCounters {
@@ -138,6 +149,8 @@ export interface Player {
   state(): PlayerState;
   /** One-line reason when start() resolved with a decode failure, else null. */
   lastError(): string | null;
+  /** Shows `text` in the HUD message slot for `ms` (default 1 s). Does nothing before start() or after the player ended. */
+  showMessage(text: string, ms?: number): void;
 }
 
 const RESIZE_DEBOUNCE_MS = 150;
@@ -212,6 +225,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   };
   let errorText: string | null = null;
   let started = false;
+  /** Set by start(): shows a HUD message. Null before start() and after the player ended. */
+  let notify: ((text: string, ms: number) => void) | null = null;
 
   // State shared between start() and the accessors below.
   let mode: Mode = deps.mode ?? 'halfblock';
@@ -237,6 +252,9 @@ export function createPlayer(deps: PlayerDeps): Player {
   return {
     counters: () => counters,
     lastError: () => errorText,
+    showMessage: (text, ms = MESSAGE_MS) => {
+      notify?.(text, ms);
+    },
     state: () => ({
       paused,
       positionSec: mediaPos(),
@@ -319,7 +337,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (barrier === null && t >= governorMuteUntil) governor?.record(ms, t);
         };
         const govSkip = (t: number): void => {
-          if (barrier === null && t >= governorMuteUntil) govSkip(t);
+          if (barrier === null && t >= governorMuteUntil) governor?.recordSkip(t);
         };
 
         const killAll = (): void => {
@@ -341,6 +359,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           messageTimer = clearTimer(messageTimer);
           pausedTimer = clearTimer(pausedTimer);
           hudRetryTimer = clearTimer(hudRetryTimer);
+          notify = null;
           router.dispose();
           stdout.removeListener('resize', onResize);
           stdin.removeListener('data', onData);
@@ -417,7 +436,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           lastHudAt = t;
         };
 
-        const setMessage = (text: string): void => {
+        const setMessage = (text: string, ms: number = MESSAGE_MS): void => {
           message = text;
           messageTimer = clearTimer(messageTimer);
           messageTimer = setTimeout(() => {
@@ -425,7 +444,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             message = null;
             touchHud();
             if (paused) flushHud();
-          }, MESSAGE_MS);
+          }, ms);
           touchHud();
           if (paused) flushHud();
         };
@@ -518,8 +537,14 @@ export function createPlayer(deps: PlayerDeps): Player {
           return Math.max(1, Math.ceil((next - elapsed) * 1000));
         };
 
+        /** One resolution of the media inputs; see `PlayerDeps.resolveInput`. `audio` is undefined without a resolver. */
+        const resolveSegment = (): { video: string[]; audio: string[] | undefined } => {
+          const r = deps.resolveInput?.();
+          return r === undefined ? { video: inputArgs, audio: undefined } : { video: r.videoArgs, audio: r.audioArgs };
+        };
+
         /** Starts a decoder at `startSec` with a new generation. Needs a pipeline. */
-        const startDecoder = (startSec: number): void => {
+        const startDecoder = (startSec: number, videoArgs: string[]): void => {
           generation++;
           counters.decoderStarts++;
           decoderStartSec = startSec;
@@ -527,7 +552,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           ended = false;
           endInfo = null;
           const mine = createDecoder({
-            inputArgs,
+            inputArgs: videoArgs,
             width: geometry.decodeWidth,
             height: geometry.decodeHeight,
             fps,
@@ -571,7 +596,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           stdout.write(CLEAR);
           layout(freshQuality);
           if (pipeline === null) showTooSmall();
-          else startDecoder(at);
+          else startDecoder(at, resolveSegment().video);
         }
 
         /**
@@ -580,18 +605,19 @@ export function createPlayer(deps: PlayerDeps): Player {
          */
         const seekTo = (targetSec: number): void => {
           stopDecoding();
-          liveAudio()?.seek(targetSec);
+          const segment = resolveSegment(); // one call: video and audio of this segment agree
+          liveAudio()?.seek(targetSec, segment.audio);
           clock.pause();
           clock.seek(targetSec);
           if (!paused && pipeline !== null) barrier = { since: now(), frame: null };
-          if (pipeline !== null) startDecoder(clock.position());
+          if (pipeline !== null) startDecoder(clock.position(), segment.video);
         };
 
         /** While paused: decode one frame at the current position and show it. */
         const repaintPaused = (): void => {
           if (pipeline === null) return;
           stopDecoding();
-          startDecoder(clock.position());
+          startDecoder(clock.position(), resolveSegment().video);
         };
 
         const handleEndOfStream = (current: Decoder): void => {
@@ -841,7 +867,10 @@ export function createPlayer(deps: PlayerDeps): Player {
           const ceiling = duration === null ? Infinity : Math.max(0, duration - SEEK_END_MARGIN_SEC);
           const target = Math.min(Math.max(0, mediaPos() + delta), ceiling);
           seekTo(target);
-          setMessage(`\u00bb ${delta > 0 ? '+' : ''}${String(delta)}s ${formatClock(target)}`);
+          const notice = deps.seekNotice?.() ?? null;
+          setMessage(
+            `\u00bb ${delta > 0 ? '+' : ''}${String(delta)}s ${formatClock(target)}${notice === null ? '' : `  ${notice}`}`,
+          );
         };
 
         const queueSeek = (deltaSec: number): void => {
@@ -924,8 +953,10 @@ export function createPlayer(deps: PlayerDeps): Player {
         stdin.on('data', onData);
         stdin.resume();
 
+        notify = setMessage;
         layout(true);
-        liveAudio()?.start(0); // held until the barrier releases
+        const first = resolveSegment();
+        liveAudio()?.start(0, first.audio); // held until the barrier releases
         if (pipeline === null) {
           // Nothing to wait for: play (the sound, at least) while the terminal is too small.
           liveAudio()?.release();
@@ -933,7 +964,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           showTooSmall();
         } else {
           barrier = { since: now(), frame: null };
-          startDecoder(clock.position());
+          startDecoder(clock.position(), first.video);
         }
         // Keys typed before playback started (during the capability probe) act as if typed now.
         if (deps.initialInput !== undefined && deps.initialInput.length > 0) router.feed(deps.initialInput);

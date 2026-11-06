@@ -78,6 +78,9 @@ export class FakeAudio implements AudioPlayer {
   plays: number[] = [];
   starts: number[] = [];
   seeks: number[] = [];
+  /** The `inputArgs` passed with each start() and seek() (undefined when the caller passed none). */
+  startArgs: (string[] | undefined)[] = [];
+  seekArgs: (string[] | undefined)[] = [];
   pauses = 0;
   resumes = 0;
   releases = 0;
@@ -103,12 +106,14 @@ export class FakeAudio implements AudioPlayer {
     this.runAt = null;
     this.frozen = 0;
   }
-  start(atSec: number): void {
+  start(atSec: number, inputArgs?: string[]): void {
     this.starts.push(atSec);
+    this.startArgs.push(inputArgs);
     this.begin(atSec);
   }
-  seek(sec: number): void {
+  seek(sec: number, inputArgs?: string[]): void {
     this.seeks.push(sec);
+    this.seekArgs.push(inputArgs);
     this.begin(sec);
   }
   release(): void {

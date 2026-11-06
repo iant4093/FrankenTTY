@@ -332,10 +332,14 @@ export interface AudioPlayer {
   /**
    * Starts ffplay (once per session) and the source at `atSec`, held: no sound until release().
    * A second call behaves like seek(). After a failure this does nothing.
+   * `inputArgs`, when given, replaces the source's ffmpeg input arguments from this segment on.
    */
-  start(atSec: number): void;
-  /** Kills only the source, starts a new one at `sec`, drops its old PCM and holds until release(). ffplay stays. */
-  seek(sec: number): void;
+  start(atSec: number, inputArgs?: string[]): void;
+  /**
+   * Kills only the source, starts a new one at `sec`, drops its old PCM and holds until release(). ffplay stays.
+   * `inputArgs`, when given, replaces the source's ffmpeg input arguments from this segment on.
+   */
+  seek(sec: number, inputArgs?: string[]): void;
   /** Starts the held segment. The position then runs. */
   release(): void;
   /** Stops writing; the position freezes. Both processes stay alive. */
@@ -429,7 +433,13 @@ export function createAudioPlayer(opts: AudioPlayerOptions): AudioPlayer {
   if (!Array.isArray(opts.inputArgs) || opts.inputArgs.length === 0) {
     throw new RangeError('inputArgs must be a non-empty array');
   }
-  const inputArgs = [...opts.inputArgs];
+  /** Input arguments of the next source. A segment may replace them (see `useInputArgs`). */
+  let inputArgs = [...opts.inputArgs];
+  const useInputArgs = (next: string[] | undefined): void => {
+    if (next === undefined) return;
+    if (!Array.isArray(next) || next.length === 0) throw new RangeError('inputArgs must be a non-empty array');
+    inputArgs = [...next];
+  };
   const ffmpegPath = opts.ffmpegPath ?? 'ffmpeg';
   const ffplayPath = opts.ffplayPath ?? 'ffplay';
   const now = opts.now ?? ((): number => performance.now());
@@ -539,7 +549,8 @@ export function createAudioPlayer(opts: AudioPlayerOptions): AudioPlayer {
     return proc;
   };
 
-  const seekImpl = (sec: number): void => {
+  const seekImpl = (sec: number, args?: string[]): void => {
+    useInputArgs(args);
     if (pump === null || hasFailed || stopping) return;
     dropSource();
     pump.seek(sec);
@@ -548,13 +559,14 @@ export function createAudioPlayer(opts: AudioPlayerOptions): AudioPlayer {
   };
 
   return {
-    start(atSec) {
+    start(atSec, args) {
       if (!Number.isFinite(atSec) || atSec < 0) throw new RangeError(`atSec must be >= 0, got ${String(atSec)}`);
       if (hasFailed || stopping) return;
       if (pump !== null) {
-        seekImpl(atSec);
+        seekImpl(atSec, args);
         return;
       }
+      useInputArgs(args);
       const player = spawnPlayer();
       ffplay = player;
       const stdin = player.child.stdin;
@@ -576,9 +588,9 @@ export function createAudioPlayer(opts: AudioPlayerOptions): AudioPlayer {
       timer = setInterval(onTick, PUMP_INTERVAL_MS);
       timer.unref();
     },
-    seek(sec) {
+    seek(sec, args) {
       if (!Number.isFinite(sec) || sec < 0) throw new RangeError(`sec must be >= 0, got ${String(sec)}`);
-      seekImpl(sec);
+      seekImpl(sec, args);
     },
     release() {
       pump?.release();

@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs';
 import { release } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { BenchError, formatBenchJson, formatBenchText, runBench } from './bench/bench.ts';
+import { formatSeekJson, formatSeekText, runSeekTest } from './bench/seek-test.ts';
 import { DEFAULT_BENCH_SIZE, DEFAULT_THRESHOLD, HELP_TEXT, VERSION, parseArgs } from './cli/args.ts';
 import type { Options } from './cli/args.ts';
 import { createAudioPlayer } from './audio/player.ts';
 import { demoAudioInputArgs, demoMetadata, demoVideoInputArgs, getDemo } from './ingest/demo.ts';
+import { ensureDemoCache } from './ingest/demo-cache.ts';
 import type { MediaInfo } from './ingest/media-info.ts';
 import { ProbeError, probe as probeInput } from './ingest/probe.ts';
 import { createPlayer } from './player/controller.ts';
@@ -16,6 +18,20 @@ import { detectColorDepth, detectUnicode, installCommand, resolveCellAspect, run
 import { createScreen, installExitTraps } from './term/screen.ts';
 
 const TOOL_CHECK_TIMEOUT_MS = 5000;
+/** HUD message when the demo seek cache finishes while playing. */
+const CACHE_READY_MESSAGE = 'seek cache ready';
+const CACHE_READY_MESSAGE_MS = 1500;
+/** Appended to the HUD message of a seek while the cache is still being built. ASCII: the HUD has no ellipsis glyph. */
+const CACHE_PENDING_NOTICE = 'preparing seek cache...';
+
+/**
+ * Directory of the demo seek cache. `FRANKENTTY_CACHE_DIR` overrides the default
+ * (`<tmpdir>/frankentty-cache`); tests use it to keep their caches apart from the user's.
+ */
+function cacheDirFromEnv(): string | undefined {
+  const dir = process.env.FRANKENTTY_CACHE_DIR;
+  return dir === undefined || dir === '' ? undefined : dir;
+}
 
 /** One time source for the clock, the audio player and the frame loop. */
 function monotonicNow(): number {
@@ -90,6 +106,23 @@ async function runBenchCommand(options: Options): Promise<number> {
   try {
     const media = await resolveMedia(options);
     const size = options.size ?? DEFAULT_BENCH_SIZE;
+    if (options.seekTest) {
+      const cacheDir = cacheDirFromEnv();
+      const seekReport = await runSeekTest({
+        source: options.demo ?? options.input ?? '',
+        media: media.info,
+        inputArgs: media.inputArgs,
+        isFile: media.info.source === 'file',
+        demo: options.demo === null ? null : getDemo(options.demo),
+        ...(cacheDir === undefined ? {} : { cacheDir }),
+        cols: size.cols,
+        rows: size.rows,
+        fps: options.fps,
+        cellAspect: options.cellAspect ?? DEFAULT_CELL_ASPECT,
+      });
+      process.stdout.write(options.json ? formatSeekJson(seekReport) : formatSeekText(seekReport));
+      return 0;
+    }
     const report = await runBench({
       source: options.demo ?? options.input ?? '',
       media: media.info,
@@ -161,6 +194,34 @@ async function run(argv: string[]): Promise<number> {
   installExitTraps(screen);
   screen.enter();
 
+  // Demo seek cache: lavfi cannot seek, so a demo is rendered once into a seekable file in the background.
+  // Segments that start after it is ready (seek, loop, resize) read the file; the first one may still be lavfi.
+  let cacheReady = false;
+  let cachePath = '';
+  let cacheFailed = false;
+  let announceReady: (() => void) | null = null;
+  if (options.demo !== null) {
+    const cacheDir = cacheDirFromEnv();
+    const cache = ensureDemoCache(getDemo(options.demo), {
+      ...(cacheDir === undefined ? {} : { dir: cacheDir }),
+      onReady: (file) => {
+        const wasReady = cacheReady;
+        cacheReady = true;
+        cachePath = file;
+        if (!wasReady) announceReady?.();
+      },
+      onError: () => {
+        cacheFailed = true; // silent: playback continues on lavfi
+      },
+    });
+    // Killed with the other children on every exit path (q, signals, crashes).
+    screen.addCleanup(cache.cancel);
+    if (cache.entry.ready) {
+      cacheReady = true;
+      cachePath = cache.entry.path;
+    }
+  }
+
   let code: number;
   let failure: string | null;
   try {
@@ -190,7 +251,19 @@ async function run(argv: string[]): Promise<number> {
       quality: options.quality,
       // Keys typed during the capability probe are not lost.
       initialInput: probe.passthrough,
+      ...(options.demo === null
+        ? {}
+        : {
+            // One call per segment: video and audio of a segment both come from the cache or both from lavfi.
+            resolveInput: () =>
+              cacheReady
+                ? { videoArgs: ['-i', cachePath], audioArgs: ['-i', cachePath] }
+                : { videoArgs: media.inputArgs, audioArgs: media.audioInputArgs },
+            seekNotice: () => (cacheReady || cacheFailed ? null : CACHE_PENDING_NOTICE),
+          }),
     });
+    // Only a cache that becomes ready during playback is announced; one found at start-up is not news.
+    announceReady = () => player.showMessage(CACHE_READY_MESSAGE, CACHE_READY_MESSAGE_MS);
     code = await player.start();
     failure = player.lastError();
   } catch (err) {

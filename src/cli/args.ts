@@ -44,6 +44,8 @@ export interface Options {
   size: { cols: number; rows: number } | null;
   /** `--json` (bench only). */
   json: boolean;
+  /** `--seek-test` (bench only): measure decode-start latency at fixed positions instead of serializing frames. */
+  seekTest: boolean;
   version: boolean;
   help: boolean;
 }
@@ -78,8 +80,12 @@ Options:
   --frames <N>                  Frames to serialize (with --bench only, default 300)
   --size <COLSxROWS>            Terminal size to simulate (with --bench only, default 120x35)
   --json                        Print the bench report as one JSON object (with --bench only)
+  --seek-test                   Measure decode-start latency at 1, 15, 30 and 45 s (with --bench only)
   --version                     Print the version
   --help                        Print this help
+
+Environment:
+  FRANKENTTY_CACHE_DIR          Directory for the --demo seek cache (default <tmpdir>/frankentty-cache)
 
 Keys: q quit, Space pause, Left/Right seek 5 s, Shift+Left/Right seek 30 s,
       m mode, c palette, i HUD.
@@ -196,6 +202,7 @@ function tokenize(argv: readonly string[]) {
         frames: { type: 'string' },
         size: { type: 'string' },
         json: { type: 'boolean' },
+        'seek-test': { type: 'boolean' },
         demo: { type: 'boolean' },
         'no-audio': { type: 'boolean' },
         loop: { type: 'boolean' },
@@ -255,6 +262,12 @@ export function parseArgs(argv: readonly string[]): ParseResult {
     if (values.json === true && !bench) {
       return { ok: false, message: '--json: only valid together with --bench' };
     }
+    if (values['seek-test'] === true && !bench) {
+      return { ok: false, message: '--seek-test: only valid together with --bench' };
+    }
+    if (values['seek-test'] === true && frames.value !== null) {
+      return { ok: false, message: '--frames: not used with --seek-test' };
+    }
     if (useDemo) {
       if (positionals.length > 1) {
         return { ok: false, message: '--demo: takes at most one name, or use an input instead of --demo' };
@@ -292,6 +305,7 @@ export function parseArgs(argv: readonly string[]): ParseResult {
       frames: frames.value,
       size: size.value,
       json: values.json === true,
+      seekTest: values['seek-test'] === true,
       version,
       help,
     },

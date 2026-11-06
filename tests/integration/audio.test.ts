@@ -254,6 +254,28 @@ describe.skipIf(!hasAudioTools)('audio player (real ffmpeg + ffplay, volume 0)',
     expect(player.ready()).toBe(true);
     await player.stop();
   });
+
+  it('seek(sec, inputArgs) and start(sec, inputArgs) switch the source input from that segment on', async () => {
+    const player = silentPlayer();
+    const errors: string[] = [];
+    player.onError((m) => errors.push(m));
+    player.start(0);
+    expect(await waitFor(() => player.ready(), 5000)).toBe(true);
+    expect(errors).toEqual([]);
+    // The new input does not exist, the old one did: a "No such file" failure shows the source used the new one.
+    player.seek(1, ['-i', 'switched-input-does-not-exist.wav']);
+    expect(await waitFor(() => errors.length > 0, 5000)).toBe(true);
+    expect(errors[0]).toMatch(/^ffmpeg: .*No such file/);
+    await player.stop();
+
+    const second = silentPlayer();
+    const secondErrors: string[] = [];
+    second.onError((m) => secondErrors.push(m));
+    second.start(0, ['-i', 'first-input-does-not-exist.wav']);
+    expect(await waitFor(() => secondErrors.length > 0, 5000)).toBe(true);
+    expect(secondErrors[0]).toMatch(/^ffmpeg: .*No such file/);
+    await second.stop();
+  });
 });
 
 describe('audio player without tools', () => {
@@ -347,5 +369,11 @@ describe('audio player without tools', () => {
       player.seek(-1);
     }).toThrow(RangeError);
     expect(() => buildAudioDecoderArgs(['-i', 'x'], -1)).toThrow(RangeError);
+    expect(() => {
+      player.seek(1, []);
+    }).toThrow(RangeError);
+    expect(() => {
+      player.start(1, []);
+    }).toThrow(RangeError);
   });
 });

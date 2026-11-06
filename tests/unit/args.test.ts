@@ -34,6 +34,7 @@ describe('parseArgs defaults', () => {
       frames: null,
       size: null,
       json: false,
+      seekTest: false,
       version: false,
       help: false,
     });
@@ -185,6 +186,22 @@ describe('parseArgs numeric ranges', () => {
   });
 });
 
+describe('parseArgs --seek-test', () => {
+  it('is a boolean flag that needs --bench', () => {
+    expect(ok(['x', '--bench', '--seek-test']).seekTest).toBe(true);
+    expect(ok(['x', '--bench']).seekTest).toBe(false);
+    expect(fail(['x', '--seek-test'])).toMatch(/--seek-test.*--bench/);
+  });
+
+  it('works with --demo, --size and --json, and rejects --frames', () => {
+    const o = ok(['--demo', 'life', '--bench', '--seek-test', '--size', '80x24', '--json']);
+    expect(o.seekTest).toBe(true);
+    expect(o.demo).toBe('life');
+    expect(o.json).toBe(true);
+    expect(fail(['x', '--bench', '--seek-test', '--frames', '10'])).toContain('--frames');
+  });
+});
+
 describe('parseArgs boolean flags', () => {
   it('sets --no-audio, --loop, --bench', () => {
     const o = ok(['x', '--no-audio', '--loop', '--bench']);
@@ -226,12 +243,14 @@ describe('parseArgs help and version', () => {
       '--frames',
       '--size',
       '--json',
+      '--seek-test',
       '--version',
       '--help',
       '--demo',
     ]) {
       expect(HELP_TEXT).toContain(flag);
     }
+    expect(HELP_TEXT).toContain('FRANKENTTY_CACHE_DIR');
     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
   });
 });
