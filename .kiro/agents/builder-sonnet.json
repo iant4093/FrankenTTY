@@ -19,6 +19,7 @@
     "fs_write": {
       "allowedPaths": [
         "assets/**",
+        "docs/screenshots/**",
         "scripts/**",
         "src/**",
         "tests/**",
@@ -27,13 +28,16 @@
       "deniedPaths": [
         ".kiro/**",
         ".github/**",
-        "docs/**",
         "scripts/hooks/**",
         "package.json",
         "LICENSE",
         "README.md",
         "DEVPOST_WRITEUP.md",
-        "package-lock.json"
+        "package-lock.json",
+        "docs/*.md",
+        "docs/briefs/**",
+        "docs/evidence/**",
+        "docs/original/**"
       ]
     },
     "execute_bash": {
@@ -77,7 +81,8 @@
           "tests/**",
           "scripts/**",
           "assets/**",
-          "tools/**"
+          "tools/**",
+          "docs/screenshots/**"
         ],
         "effect": "allow"
       },
@@ -86,13 +91,16 @@
         "match": [
           ".kiro/**",
           ".github/**",
-          "docs/**",
           "scripts/hooks/**",
           "package.json",
           "LICENSE",
           "README.md",
           "DEVPOST_WRITEUP.md",
-          "package-lock.json"
+          "package-lock.json",
+          "docs/*.md",
+          "docs/briefs/**",
+          "docs/evidence/**",
+          "docs/original/**"
         ],
         "effect": "deny"
       },
