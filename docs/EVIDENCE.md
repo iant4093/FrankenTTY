@@ -591,3 +591,22 @@ into a scratch dir → `frankentty --version` prints `0.1.0`.
 - **Capability matrix (5.3):** 28 terminal environments. Without
   `COLORTERM`, Ghostty, WezTerm, Alacritty, GNOME Terminal/VTE and Konsole
   were detected below 24-bit (Node's fallback reports 4 or 8). Fix brief 5.4.
+
+### Ian's screenshots, 2026-11-05 19:00 PST → task 4.12
+
+- **Shrink on `m`:** HUD `Q2 24-bit` at full size, later `Q4 256` with a
+  smaller, centered picture after cycling modes. Braille/ASCII frames cost
+  more color changes, so the governor stepped into the cell-cap levels and
+  never stepped back up (p90 < 0.5 × budget for 3 s was too strict at the
+  smaller size). Reproduced in a unit test with a fake stdout that is slower
+  in Braille. Fix: mode/palette changes reset the governor and drop caps;
+  cap levels need 3 s over budget to enter and leave at p90 < 0.75 × budget
+  for 2 s; the HUD says "quality: smaller picture" / "quality: full size".
+  New properties (f) and (g), 1,000 runs each; mutation-checked.
+- **Stray "p" at top-left:** Apple Terminal 488 does not implement DECRQM and
+  printed the final byte of `CSI ?2026$p`. Fix: no DECRQM for Apple
+  Terminal, and the screen is cleared after the probe on every terminal.
+- **npm:** `frankentty@0.1.1` is live (`npx -y frankentty@0.1.1 --version` →
+  `0.1.1`). The trusted publisher is limited to staged publishing and was
+  "pending validation" until the first OIDC publish. CI now tries a direct
+  publish and falls back to `npm stage publish`.
