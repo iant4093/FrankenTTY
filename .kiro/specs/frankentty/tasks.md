@@ -57,7 +57,7 @@ done task: `docs/EVIDENCE.md`.
 
 ## Wave 5: Hardening + docs (Nov 25-26)
 
-- [ ] 5.1 [architect-opus] Tier 2 terminal pass; README final; DEVPOST_WRITEUP draft.
+- [x] 5.1 [architect-opus] README for v0.1.x; DEVPOST_WRITEUP draft; traceability (5.3); Tier 2 detection matrix (5.4). Real Tier 2 terminal pass still open.
 
 ## Wave 6: Video (Nov 27-Dec 1)
 

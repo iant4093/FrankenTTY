@@ -145,8 +145,9 @@ so the server is also registered on the architect agent.
 
 ## 8. Property-based testing
 
-fast-check properties live in `tests/pbt/` *(as of 2026-11-05: 16 files,
-47 properties, about 160,000 generated cases per run)*. They cover geometry
+fast-check properties live in `tests/pbt/` *(as of 2026-11-06: 16 files,
+47 properties with explicit run counts, 161,700 generated cases per run,
+inside a suite of 920 tests)*. They cover geometry
 fit, the probe parser, the frame assembler, downsampling, the encoder
 (framing, non-expansion, emulator round-trip, deltas), Braille and ASCII,
 palettes and color mappers, the key router, the HUD, the clock, the
@@ -168,7 +169,29 @@ What PBT caught:
    color comparison on purpose. P2c/P2d (emulator round-trip and delta
    sequences) caught both and shrank them to 1×2 grids.
 
-## 9. Results *(as of 2026-11-05)*
+### Other catches from tests and review
+
+- **Windows process trees.** CI on Windows found that killing `ffmpeg.exe`
+  from Chocolatey or Scoop only kills a launcher shim. The real FFmpeg kept
+  running and held the pipe open. A non-forwarding shim test now reproduces
+  it on every OS, and the fix kills the whole tree (`taskkill /T`).
+- **A guard that never fired.** Tagging every test with its requirement ID
+  (`node scripts/trace.ts` → `docs/TRACEABILITY.md`, 44 of 44 covered)
+  forced a test for REQ-COMP-01. It showed the commit guard's "`.kiro` must
+  not be ignored" check had never run, because `git check-ignore -q`
+  rejects more than one path and the error was hidden.
+- **A one-word recursion.** In review, `govSkip` called itself instead of
+  the governor, so the first busy-terminal tick would overflow the stack.
+  721 tests passed with it. Four busy-stdout tests now fail on that exact
+  mutation.
+- **Real-use feedback beats green tests.** Ian's hand check in Apple
+  Terminal found laggy seeks, late audio and flashing that every test
+  passed. The diagnosis (EVIDENCE, "Wave 4 hand check") led to one
+  long-lived ffplay fed paced PCM, a seek barrier, a seekable demo cache,
+  and no full-screen redraws. Seeks now land in about 0.2 s, down from
+  2 s on the worst demo.
+
+## 9. Results *(as of 2026-11-06)*
 
 Bench at 120×35, default settings (24-bit, threshold 8). The naive
 baseline is two full color codes per cell.

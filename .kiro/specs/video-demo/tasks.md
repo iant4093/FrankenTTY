@@ -8,7 +8,7 @@
 
 ## Tasks
 
-- [ ] 6.1 [architect-opus] Script and storyboard with timings; every number cited from EVIDENCE (REQ-VID-04).
+- [x] 6.1 [architect-opus] Script and storyboard with timings; every number cited from EVIDENCE (REQ-VID-04).
 - [ ] 6.2 [Ian] Record Act I and Act III in Apple Terminal at 1920×1080 (shot list from 6.1).
 - [ ] 6.3 [builder-sonnet] Act II diagram frames rendered from real encoder output; bench charts.
 - [ ] 6.4 [builder-sonnet] Act IV clips: `.kiro/` tree, hook block, PBT counterexample, MCP snapshot, CI run, install command.
