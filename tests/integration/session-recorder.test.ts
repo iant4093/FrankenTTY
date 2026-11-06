@@ -19,7 +19,8 @@ import { KEY_RIGHT, KEY_SHIFT_LEFT, SCENES, getScene } from '../../tools/session
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const hasTool = (tool: string, flag: string): boolean => spawnSync(tool, [flag], { stdio: 'ignore' }).status === 0;
-const canRecord = hasTool('ffmpeg', '-version') && hasTool('python3', '--version');
+// The recorder drives a POSIX pseudo-terminal (Python pty/fcntl), which Windows does not have.
+const canRecord = process.platform !== 'win32' && hasTool('ffmpeg', '-version') && hasTool('python3', '--version');
 
 const RESTORE = '\x1b[?2026l\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l';
 

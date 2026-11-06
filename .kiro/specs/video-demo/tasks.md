@@ -15,8 +15,8 @@
 ## Tasks
 
 - [x] 6.1 [architect-opus] Script and shot list: `video/script.md`.
-- [ ] 6.A [builder-sonnet] Session recorder + MCP tool + scene session specs.
-- [ ] 6.B [builder-sonnet] Remotion project: terminal replay, motion graphics, acts, timing from narration.
-- [ ] 6.C [builder-sonnet] Narration (Kokoro), procedural music, mix, loudness, `video/build.sh` end to end.
-- [ ] 6.D [architect-opus] QA: format, duration 120-175 s, loudness, frame review, numbers vs EVIDENCE, rights.
+- [x] 6.A [builder-sonnet] Session recorder + MCP tool + scene session specs.
+- [x] 6.B [builder-sonnet] Remotion project: terminal replay, motion graphics, acts, timing from narration.
+- [x] 6.C [builder-sonnet] Narration (Kokoro), procedural music, mix, loudness, `video/build.sh` end to end.
+- [~] 6.D [architect-opus] QA: format, duration 120-175 s, loudness, frame review, numbers vs EVIDENCE, rights. (format, length, loudness and frame review done; ear check pending)
 - [ ] 6.E [Ian] Upload to YouTube (needs Ian's account) and paste the link into Devpost.

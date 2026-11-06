@@ -610,3 +610,22 @@ into a scratch dir → `frankentty --version` prints `0.1.0`.
   `0.1.1`). The trusted publisher is limited to staged publishing and was
   "pending validation" until the first OIDC publish. CI now tries a direct
   publish and falls back to `npm stage publish`.
+
+---
+
+## Wave 6: demo video (2026-11-05)
+
+Built end to end by the agents with `bash video/build.sh`, no manual steps:
+
+| Step | Tool | Result |
+|---|---|---|
+| Footage | `tools/session-recorder` runs the real player (`node src/main.ts`) in a PTY with scripted keys; 5 scenes | Replayed through xterm.js inside Remotion, painted cell by cell |
+| Narration | Kokoro-82M (Apache-2.0), local, voice per `video/narration/narrate.py` | Acts 19.1 s, 30.0 s, 32.8 s, 40.5 s |
+| Music | ffmpeg lavfi `aevalsrc`, procedural | Peak −22.9 dBFS before the mix |
+| Motion graphics | Remotion 4.0.541 compositions written by builder-sonnet; numbers read from `docs/evidence/` at build time | Acts I–IV + closing card |
+| Final | two-pass `loudnorm` | `video/output/FrankenTTY_Demo.mp4`: 1920×1080, 30 fps, H.264 + AAC 48 kHz, **146.6 s**, **−14.0 LUFS**, 40.1 MB |
+
+VHS could not be installed: Homebrew's own `sandbox-exec` fails inside the
+agent sandbox ("sandbox_apply: Operation not permitted"). The recorder plus
+xterm.js replay is the same technique VHS uses (VHS also renders through
+xterm.js).
