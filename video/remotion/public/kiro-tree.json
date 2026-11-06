@@ -1,0 +1,77 @@
+[
+ {
+  "name": "agents",
+  "children": [
+   {
+    "name": "architect-opus.json"
+   },
+   {
+    "name": "builder-sonnet.json"
+   }
+  ]
+ },
+ {
+  "name": "hooks",
+  "children": [
+   {
+    "name": "compliance-guard.json"
+   },
+   {
+    "name": "review-and-pbt.json"
+   },
+   {
+    "name": "sync-docs.json"
+   }
+  ]
+ },
+ {
+  "name": "specs",
+  "children": [
+   {
+    "name": "frankentty",
+    "children": [
+     {
+      "name": "design.md"
+     },
+     {
+      "name": "requirements.md"
+     },
+     {
+      "name": "tasks.md"
+     }
+    ]
+   },
+   {
+    "name": "video-demo",
+    "children": [
+     {
+      "name": "design.md"
+     },
+     {
+      "name": "requirements.md"
+     },
+     {
+      "name": "tasks.md"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "steering",
+  "children": [
+   {
+    "name": "agent-roles.md"
+   },
+   {
+    "name": "product.md"
+   },
+   {
+    "name": "structure.md"
+   },
+   {
+    "name": "tech.md"
+   }
+  ]
+ }
+]
