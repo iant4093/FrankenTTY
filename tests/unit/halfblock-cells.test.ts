@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GLYPH_SPACE, GLYPH_UPPER_HALF, createCellGrid, packRgb } from '../../src/renderer/cells.ts';
 import { buildHalfblockCells } from '../../src/renderer/halfblock-cells.ts';
 
-describe('buildHalfblockCells', () => {
+describe('[REQ-RENDER-01][REQ-RENDER-03] buildHalfblockCells', () => {
   it('takes the top pixel as foreground and the bottom pixel as background', () => {
     // 2 cols x 1 row of cells = 4 x 4 decode pixels; every 2x2 block is flat.
     const w = 4;

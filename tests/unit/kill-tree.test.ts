@@ -10,13 +10,13 @@ function exited(child: ReturnType<typeof spawn>): Promise<void> {
   return new Promise((resolve) => child.once('exit', () => resolve()));
 }
 
-describe('taskkillArgs', () => {
+describe('[REQ-TERM-03][REQ-PLAT-01] taskkillArgs', () => {
   it('kills the pid and its descendants, forcefully', () => {
     expect(taskkillArgs(1234)).toEqual(['/pid', '1234', '/T', '/F']);
   });
 });
 
-describe('killTreeSync', () => {
+describe('[REQ-TERM-03][REQ-PLAT-01] killTreeSync', () => {
   it('kills a running process', async () => {
     const child = sleeper();
     const done = exited(child);
@@ -41,7 +41,7 @@ describe('killTreeSync', () => {
   });
 });
 
-describe('killTree', () => {
+describe('[REQ-TERM-03][REQ-PLAT-01] killTree', () => {
   it('kills a running process and resolves', async () => {
     const child = sleeper();
     const done = exited(child);

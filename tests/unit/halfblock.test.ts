@@ -15,7 +15,7 @@ function cell(top: number[], bottom: number[]): string {
   return `${CSI}38;2;${top.join(';')}m${CSI}48;2;${bottom.join(';')}m${UPPER_HALF_BLOCK}`;
 }
 
-describe('createHalfblockSerializer', () => {
+describe('[REQ-RENDER-01][REQ-RENDER-04][REQ-RENDER-07] createHalfblockSerializer', () => {
   it('writes exact bytes for a 2x1 cell grid', () => {
     // 2 columns x 1 row of cells = 2 x 2 pixels. Row 0 is the top row, row 1 the bottom row.
     const pixels = Uint8Array.from([
@@ -86,7 +86,7 @@ describe('createHalfblockSerializer', () => {
   });
 });
 
-describe('writeByteDecimal', () => {
+describe('[REQ-RENDER-07] writeByteDecimal', () => {
   it('matches String(v) for every value 0..255', () => {
     const buf = new Uint8Array(4);
     for (let v = 0; v < 256; v++) {

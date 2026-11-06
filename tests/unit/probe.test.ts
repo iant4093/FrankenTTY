@@ -11,7 +11,7 @@ function fixture(name: string): unknown {
   return JSON.parse(readFileSync(path.join(FIXTURES, `${name}.json`), 'utf8'));
 }
 
-describe('parseProbeJson fixtures', () => {
+describe('[REQ-INGEST-01] parseProbeJson fixtures', () => {
   const cases: [string, MediaInfo][] = [
     [
       'h264-aac-1080p',
@@ -52,7 +52,7 @@ describe('parseProbeJson fixtures', () => {
   });
 });
 
-describe('parseProbeJson details', () => {
+describe('[REQ-INGEST-01] parseProbeJson details', () => {
   function video(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       codec_type: 'video',
@@ -135,7 +135,7 @@ describe('parseProbeJson details', () => {
   });
 });
 
-describe('classifyInput', () => {
+describe('[REQ-INGEST-01] classifyInput', () => {
   it('treats paths as files and http(s) as urls', () => {
     expect(classifyInput('movie.mp4')).toBe('file');
     expect(classifyInput('/tmp/a b/movie.mp4')).toBe('file');
@@ -152,7 +152,7 @@ describe('classifyInput', () => {
   });
 });
 
-describe('probe()', () => {
+describe('[REQ-INGEST-01] probe()', () => {
   it('rejects non-http schemes before spawning anything', async () => {
     await expect(probe('rtmp://host/app', { ffprobePath: '/nonexistent/ffprobe' })).rejects.toThrow(
       'live and non-http streams are not supported',

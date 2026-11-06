@@ -45,7 +45,7 @@ function visibleText(cols: number, state: HudState, row = 24): string {
 
 const FULL = '▶ 0:12 / 1:00  30.0 fps  412 KB/s  -75% SGR  Q0 24-bit  halfblock truecolor  space ←/→ m c i q';
 
-describe('HUD visible layout', () => {
+describe('[REQ-HUD-01] HUD visible layout', () => {
   it('renders the exact bytes for a sample state at 100 columns', () => {
     const raw = renderText(100, sample(), 35);
     expect(raw).toBe(`${ESC}[35;1H${STYLE}${FULL.padEnd(100, ' ')}${RESET}`);
@@ -115,7 +115,7 @@ describe('HUD visible layout', () => {
   });
 });
 
-describe('HUD message form', () => {
+describe('[REQ-HUD-01][REQ-SYNC-05] HUD message form', () => {
   it('replaces everything after the time', () => {
     const text = visibleText(40, sample({ positionSec: 17, message: '» +5s' }));
     expect(text).toBe('▶ 0:17 / 1:00  » +5s'.padEnd(40, ' '));
@@ -136,7 +136,7 @@ describe('HUD message form', () => {
   });
 });
 
-describe('HUD hidden form', () => {
+describe('[REQ-GEO-02] HUD hidden form', () => {
   it('moves to the row, resets attributes and erases the line', () => {
     expect(renderText(100, sample({ visible: false }), 35)).toBe(`${ESC}[35;1H${RESET}${ESC}[2K`);
   });

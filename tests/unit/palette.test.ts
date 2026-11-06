@@ -10,7 +10,7 @@ import {
   createPalette,
 } from '../../src/renderer/palette.ts';
 
-describe('palette names', () => {
+describe('[REQ-PAL-01] palette names', () => {
   it('match the CLI PALETTES in the same order', () => {
     expect([...PALETTE_NAMES]).toEqual([...PALETTES]);
   });
@@ -20,14 +20,14 @@ describe('palette names', () => {
   });
 });
 
-describe('truecolor', () => {
+describe('[REQ-PAL-01] truecolor', () => {
   it('is the identity', () => {
     const p = createPalette('truecolor');
     for (const c of [0x000000, 0xffffff, 0x123456, 0xff0080]) expect(p.apply(c)).toBe(c);
   });
 });
 
-describe('ramps', () => {
+describe('[REQ-PAL-01] ramps', () => {
   it('amber and green have 16 entries, dmg has 4', () => {
     expect(AMBER_RAMP).toHaveLength(16);
     expect(GREEN_RAMP).toHaveLength(16);
@@ -72,7 +72,7 @@ describe('ramps', () => {
   });
 });
 
-describe('amber and green', () => {
+describe('[REQ-PAL-01] amber and green', () => {
   it('map black to the darkest entry and white to the white-hot top entry', () => {
     expect(createPalette('amber').apply(0x000000)).toBe(0x0b0800);
     expect(createPalette('amber').apply(0xffffff)).toBe(0xfff4d6);
@@ -98,7 +98,7 @@ describe('amber and green', () => {
   });
 });
 
-describe('dmg', () => {
+describe('[REQ-PAL-01] dmg', () => {
   it('uses exactly four colors', () => {
     const p = createPalette('dmg');
     const seen = new Set<number>();
@@ -125,7 +125,7 @@ describe('dmg', () => {
   });
 });
 
-describe('applyGrid', () => {
+describe('[REQ-PAL-01] applyGrid', () => {
   it('maps fg and bg in place and leaves glyphs alone', () => {
     const grid = createCellGrid(3, 2);
     const inputs = [0x000000, 0xffffff, 0x808080, 0xff0000, 0x00ff00, 0x0000ff];

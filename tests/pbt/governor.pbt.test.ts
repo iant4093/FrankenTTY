@@ -89,7 +89,7 @@ function p90Of(values: number[]): number {
 
 const blocks = fc.array(block, { minLength: 1, maxLength: 20 });
 
-describe('governor properties', () => {
+describe('[REQ-PERF-01] governor properties', () => {
   let increasesSeen = 0;
   let decreasesSeen = 0;
 

@@ -25,7 +25,7 @@ const stateArb: fc.Arbitrary<HudState> = fc.record({
 
 const ESC = '\x1b';
 
-describe('HUD property', () => {
+describe('[REQ-HUD-01] HUD property', () => {
   it('visible text is exactly cols columns, free of stray control bytes, and within capacity', () => {
     fc.assert(
       fc.property(

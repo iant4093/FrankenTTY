@@ -12,7 +12,7 @@ function solid(cols: number, rows: number, r: number, g: number, b: number): Uin
   return px;
 }
 
-describe('buildAsciiCells', () => {
+describe('[REQ-RENDER-06] buildAsciiCells', () => {
   it('exports the 10-level ramp, all below 0x80', () => {
     expect(ASCII_RAMP).toBe(' .:-=+*#%@');
     for (const ch of ASCII_RAMP) expect(ch.charCodeAt(0)).toBeLessThan(0x80);

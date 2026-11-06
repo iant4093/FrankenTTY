@@ -23,7 +23,7 @@ function feed(gov: Governor, from: number, durationMs: number, frameMs: number):
   return t;
 }
 
-describe('settings per level', () => {
+describe('[REQ-PERF-01] settings per level', () => {
   it('24-bit base: threshold steps, then 256-color, then cell caps', () => {
     const g = createGovernor(BASE);
     const expected = [
@@ -107,7 +107,7 @@ describe('settings per level', () => {
   });
 });
 
-describe('stepping down', () => {
+describe('[REQ-PERF-01] stepping down', () => {
   it('steps down once per cooldown under sustained overload, up to the floor', () => {
     const g = createGovernor(BASE);
     const changes: number[] = [];
@@ -205,7 +205,7 @@ describe('stepping down', () => {
   });
 });
 
-describe('stepping up', () => {
+describe('[REQ-PERF-01] stepping up', () => {
   function overloaded(): { g: Governor; now: number } {
     const g = createGovernor(BASE);
     let now = 0;
@@ -275,7 +275,7 @@ describe('stepping up', () => {
   });
 });
 
-describe('enabled = false (--quality max)', () => {
+describe('[REQ-PERF-01] enabled = false (--quality max)', () => {
   it('stays at level 0 under overload', () => {
     const g = createGovernor({ ...BASE, enabled: false });
     for (let t = 0; t < 20_000; t += STEP) {
@@ -295,7 +295,7 @@ describe('enabled = false (--quality max)', () => {
   });
 });
 
-describe('onChange', () => {
+describe('[REQ-PERF-01] onChange', () => {
   it('fires once per level change with the new settings and level', () => {
     const g = createGovernor(BASE);
     const seen: { level: number; threshold: number }[] = [];
@@ -328,7 +328,7 @@ describe('onChange', () => {
   });
 });
 
-describe('input hygiene', () => {
+describe('[REQ-PERF-01] input hygiene', () => {
   it('ignores non-finite samples', () => {
     const g = createGovernor(BASE);
     for (let i = 0; i < 20; i++) g.record(Number.NaN, i * STEP);
@@ -354,7 +354,7 @@ describe('input hygiene', () => {
   });
 });
 
-describe('simulation: Apple Terminal, mandelbrot 244x72', () => {
+describe('[REQ-PERF-01] simulation: Apple Terminal, mandelbrot 244x72', () => {
   // docs/EVIDENCE.md, Wave 3 bench sweep: mandelbrot at 244x72 (17,568 cells) writes 538 KB/frame
   // at threshold 0, 246 KB at threshold 8, and 79 KB at 256-color threshold 8. Wave 0 (Apple
   // Terminal sweep): throughput on color-heavy content is 2.1 MB/s, so 2.4 MB/s is a mild

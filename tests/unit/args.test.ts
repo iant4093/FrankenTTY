@@ -15,7 +15,7 @@ function fail(argv: string[]): string {
   return result.message;
 }
 
-describe('parseArgs defaults', () => {
+describe('[REQ-CLI-01] parseArgs defaults', () => {
   it('parses a file input with defaults', () => {
     expect(ok(['video.mp4'])).toEqual({
       input: 'video.mp4',
@@ -45,7 +45,7 @@ describe('parseArgs defaults', () => {
   });
 });
 
-describe('parseArgs demo', () => {
+describe('[REQ-CLI-01] parseArgs demo', () => {
   it('defaults the demo name to mandelbrot', () => {
     const o = ok(['--demo']);
     expect(o.demo).toBe('mandelbrot');
@@ -81,7 +81,7 @@ describe('parseArgs demo', () => {
   });
 });
 
-describe('parseArgs enum flags', () => {
+describe('[REQ-CLI-01][REQ-CLI-02] parseArgs enum flags', () => {
   it.each(['halfblock', 'ascii', 'braille'])('accepts --mode %s', (v) => {
     expect(ok(['x', '--mode', v]).mode).toBe(v);
   });
@@ -107,7 +107,7 @@ describe('parseArgs enum flags', () => {
   });
 });
 
-describe('parseArgs numeric ranges', () => {
+describe('[REQ-CLI-01][REQ-CLI-02] parseArgs numeric ranges', () => {
   it('--fps accepts 1 and 60 and rejects 0, 61, fractions and text', () => {
     expect(ok(['x', '--fps', '1']).fps).toBe(1);
     expect(ok(['x', '--fps', '60']).fps).toBe(60);
@@ -202,7 +202,7 @@ describe('parseArgs --seek-test', () => {
   });
 });
 
-describe('parseArgs boolean flags', () => {
+describe('[REQ-CLI-01] parseArgs boolean flags', () => {
   it('sets --no-audio, --loop, --bench', () => {
     const o = ok(['x', '--no-audio', '--loop', '--bench']);
     expect(o.noAudio).toBe(true);
@@ -217,7 +217,7 @@ describe('parseArgs boolean flags', () => {
   });
 });
 
-describe('parseArgs help and version', () => {
+describe('[REQ-CLI-01] parseArgs help and version', () => {
   it('--help needs no input', () => {
     expect(ok(['--help']).help).toBe(true);
   });
@@ -255,7 +255,7 @@ describe('parseArgs help and version', () => {
   });
 });
 
-describe('parseArgs unknown arguments', () => {
+describe('[REQ-CLI-02] parseArgs unknown arguments', () => {
   it('rejects an unknown flag by name', () => {
     const message = fail(['x', '--bogus']);
     expect(message).toContain('--bogus');

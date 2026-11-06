@@ -10,7 +10,7 @@ const helper = path.join(root, 'tests', 'helpers', 'pty_run.py');
 const canRun =
   process.platform !== 'win32' && spawnSync('python3', ['--version'], { stdio: 'ignore' }).status === 0;
 
-describe.skipIf(!canRun)('prerequisites in a PTY', () => {
+describe.skipIf(!canRun)('[REQ-PREREQ-01] prerequisites in a PTY', () => {
   it('missing ffmpeg and ffprobe exit 1 with an install hint and leave the terminal untouched', () => {
     const spec = {
       cmd: [process.execPath, 'src/main.ts', '--demo'],

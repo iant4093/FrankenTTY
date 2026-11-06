@@ -14,7 +14,7 @@ const RIGHT = '\x1b[C';
 const SHIFT_RIGHT = '\x1b[1;2C';
 const SHIFT_LEFT = '\x1b[1;2D';
 
-describe('formatClock', () => {
+describe('[REQ-HUD-01] formatClock', () => {
   it('formats m:ss and h:mm:ss', () => {
     expect(formatClock(0)).toBe('0:00');
     expect(formatClock(17.9)).toBe('0:17');
@@ -26,7 +26,7 @@ describe('formatClock', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('pause and resume (REQ-SYNC-03)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-SYNC-03] pause and resume', () => {
   it('pause freezes the position and the frames; resume continues from the paused position', async () => {
     const { stdout, stdin, player } = setup({ marker: 'ctl-pause' });
     const result = player.start();
@@ -99,7 +99,7 @@ describe.skipIf(!hasFfmpeg)('pause and resume (REQ-SYNC-03)', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('seek (REQ-SYNC-05)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-SYNC-05] seek', () => {
   it('coalesces three quick +5 presses into one +15 s seek', async () => {
     const { stdout, stdin, player } = setup({ marker: 'ctl-seek3' });
     const result = player.start();
@@ -304,7 +304,7 @@ describe.skipIf(!hasFfmpeg)('seek (REQ-SYNC-05)', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('mode, palette and HUD keys (REQ-UI-01)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-UI-01] mode, palette and HUD keys', () => {
   it('m cycles halfblock -> ascii -> braille -> halfblock and names the mode on the HUD', async () => {
     const { stdout, stdin, player } = setup({ marker: 'ctl-mode' });
     const result = player.start();
@@ -370,7 +370,7 @@ describe.skipIf(!hasFfmpeg)('mode, palette and HUD keys (REQ-UI-01)', () => {
     await result;
   });
 
-  it('i hides and shows the HUD; the bottom row stays reserved either way', async () => {
+  it('[REQ-GEO-02] i hides and shows the HUD; the bottom row stays reserved either way', async () => {
     const { stdout, stdin, player } = setup({ marker: 'ctl-hud' });
     const result = player.start();
     expect(await waitFor(() => stdout.frames() > 5, STARTUP_MS)).toBe(true);
@@ -447,7 +447,7 @@ describe.skipIf(!hasFfmpeg)('mode, palette and HUD keys (REQ-UI-01)', () => {
     expect(Math.max(...rows)).toBeLessThanOrEqual(11);
   });
 
-  it('the HUD shows fps, KB/s, SGR saving, quality step, color depth, mode and palette', async () => {
+  it('[REQ-HUD-01] the HUD shows fps, KB/s, SGR saving, quality step, color depth, mode and palette', async () => {
     const { stdout, stdin, player } = setup({ marker: 'ctl-hud-fields', cols: 100 });
     const result = player.start();
     expect(await waitFor(() => stdout.frames() > 40, STARTUP_MS)).toBe(true);
@@ -467,7 +467,7 @@ describe.skipIf(!hasFfmpeg)('mode, palette and HUD keys (REQ-UI-01)', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('audio and the clock (REQ-SYNC-01, REQ-SYNC-02)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-SYNC-01][REQ-SYNC-02] audio and the clock', () => {
   it('uses the audio position as the master clock', async () => {
     class Ahead extends FakeAudio {
       override positionSec(): number {
@@ -522,7 +522,7 @@ describe.skipIf(!hasFfmpeg)('audio and the clock (REQ-SYNC-01, REQ-SYNC-02)', ()
     expect(await result).toBe(0);
   });
 
-  it('loop restarts video and audio together at 0', async () => {
+  it('[REQ-CLI-01] loop restarts video and audio together at 0', async () => {
     const audio = new FakeAudio();
     const { stdin, player } = setup({ marker: 'ctl-loop-audio', seconds: 0.5, extra: { audio, loop: true } });
     const result = player.start();
@@ -560,7 +560,7 @@ interface Snapshot {
   starts: number;
 }
 
-describe.skipIf(!hasFfmpeg)('quality governor wiring (REQ-PERF-01)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-PERF-01] quality governor wiring', () => {
   it('80 ms writes at 30 fps step down to 256 colors without restarting the decoder', async () => {
     const sim = simulated(80);
     const { stdout, stdin, player } = setup({

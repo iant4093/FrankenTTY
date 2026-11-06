@@ -104,7 +104,7 @@ function makeRouter(events: KeyEvent[]) {
   });
 }
 
-describe('P5: any split of a key byte stream yields the same key events', () => {
+describe('[P5][REQ-UI-02] any split of a key byte stream yields the same key events', () => {
   it('matches the expected events for random key streams split at random points', () => {
     fc.assert(
       fc.property(
@@ -149,7 +149,7 @@ describe('P5: any split of a key byte stream yields the same key events', () => 
   });
 });
 
-describe('P5b: arbitrary bytes never throw and the pending buffer stays bounded', () => {
+describe('[P5b][REQ-UI-02] arbitrary bytes never throw and the pending buffer stays bounded', () => {
   it('holds for random byte streams, fed one byte at a time and in chunks', () => {
     fc.assert(
       fc.property(

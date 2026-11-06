@@ -6,7 +6,7 @@ import { readCell, replayInto } from '../helpers/emulator.ts';
 const pack = (r: number, g: number, b: number): number => (r << 16) | (g << 8) | b;
 
 // P2c-naive: replaying serializeNaive output in a real emulator reproduces every input cell exactly.
-describe('P2c-naive halfblock serializer in @xterm/headless', () => {
+describe('[P2c][REQ-RENDER-01] naive halfblock serializer in @xterm/headless', () => {
   const cases = fc
     .record({
       c: fc.integer({ min: 1, max: 24 }),

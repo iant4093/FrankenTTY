@@ -6,7 +6,7 @@ import { AMBER_RAMP, GREEN_RAMP, PALETTE_NAMES, createPalette } from '../../src/
 // P3: palette closure in [0,255], idempotence, and monotonic luma for the phosphor/LCD ramps.
 const rgb = fc.integer({ min: 0, max: 0xffffff });
 
-describe('P3 palettes', () => {
+describe('[P3][REQ-PAL-01] palettes', () => {
   for (const name of PALETTE_NAMES) {
     const palette = createPalette(name);
 
@@ -43,7 +43,7 @@ describe('P3 palettes', () => {
 
 // P3 (ramp span): amber and green cover the full luma range, and inputs that are far apart inside
 // the 16..240 span never collapse to the same entry (no clipping).
-describe('P3 phosphor ramp span', () => {
+describe('[P3][REQ-PAL-01] phosphor ramp span', () => {
   for (const [name, ramp] of [['amber', AMBER_RAMP], ['green', GREEN_RAMP]] as const) {
     const palette = createPalette(name);
     const lumas = ramp.map((c) => lumaPacked(c));

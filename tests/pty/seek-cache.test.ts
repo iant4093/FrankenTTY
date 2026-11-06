@@ -31,7 +31,7 @@ const SHIFT_RIGHT = '\x1b[1;2C';
 /** The pre-built cache holds 40 s: enough for a seek from about 2 s to about 32 s. */
 const WARM_CACHE_SEC = 40;
 
-describe.skipIf(!canRun)('--demo mandelbrot with the seek cache, in a PTY', () => {
+describe.skipIf(!canRun)('[REQ-SYNC-05] --demo mandelbrot with the seek cache, in a PTY', () => {
   let warmDir: string;
   let coldDir: string;
 

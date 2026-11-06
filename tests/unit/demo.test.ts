@@ -8,7 +8,7 @@ import {
   getDemo,
 } from '../../src/ingest/demo.ts';
 
-describe('demo sources', () => {
+describe('[REQ-INGEST-03][REQ-COMP-03] demo sources', () => {
   it('uses the same names, in the same order, as the CLI', () => {
     expect([...DEMO_NAMES]).toEqual([...DEMOS]);
     expect([...DEMO_NAMES]).toEqual(['mandelbrot', 'life', 'cellauto', 'gradients', 'testsrc2']);

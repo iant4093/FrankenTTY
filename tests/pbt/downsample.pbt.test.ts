@@ -3,7 +3,7 @@ import { describe, it } from 'vitest';
 import { downsampleHalfblock } from '../../src/renderer/downsample.ts';
 
 // P6: each output channel lies within the min/max of its 2x2 source block.
-describe('P6 downsampleHalfblock', () => {
+describe('[P6][REQ-RENDER-01] downsampleHalfblock', () => {
   const sizes = fc.record({ c: fc.integer({ min: 1, max: 40 }), r: fc.integer({ min: 1, max: 20 }) }).chain(({ c, r }) =>
     fc.record({
       c: fc.constant(c),

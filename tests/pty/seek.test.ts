@@ -90,7 +90,7 @@ function measureSeek(run: PtyRun, keyAt: number, message: string): SeekResult | 
   }
 }
 
-describe.skipIf(!canRun)('seek, pause and resume in a PTY on a 20 s MP4 with audio', () => {
+describe.skipIf(!canRun)('[REQ-SYNC-05][REQ-SYNC-03] seek, pause and resume in a PTY on a 20 s MP4 with audio', () => {
   beforeAll(() => {
     if (existsSync(MP4)) return;
     const r = spawnSync('bash', [path.join(root, 'scripts', 'generate-demo-media.sh'), 'testsrc2', '20'], { encoding: 'utf8' });

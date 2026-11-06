@@ -20,7 +20,7 @@ function block(colorAt: (x: number, y: number) => [number, number, number]): Uin
 const BLACK: [number, number, number] = [0, 0, 0];
 const WHITE: [number, number, number] = [255, 255, 255];
 
-describe('buildBrailleCells', () => {
+describe('[REQ-RENDER-06] buildBrailleCells', () => {
   const expectedBit: Record<string, number> = {
     '0,0': 0x01,
     '0,1': 0x02,

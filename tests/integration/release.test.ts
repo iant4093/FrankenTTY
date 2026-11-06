@@ -17,7 +17,7 @@ const enabled =
 const hostName = `${process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch === 'arm64' ? 'arm64' : 'x64'}`;
 const hostArchive = `frankentty-${hostName}.tar.gz`;
 
-describe.skipIf(!enabled)('build-release.sh --targets host', () => {
+describe.skipIf(!enabled)('[REQ-DIST-01] build-release.sh --targets host', () => {
   let buildOutput = '';
   const extractDir = path.join(root, 'build', 'release-test');
 

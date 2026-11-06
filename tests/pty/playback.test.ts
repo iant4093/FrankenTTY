@@ -147,7 +147,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     if (cacheDir !== '') rmSync(cacheDir, { recursive: true, force: true });
   });
 
-  it('plays a red file, draws it centered, shows the HUD on the bottom row and restores on q', async () => {
+  it('[REQ-RENDER-01][REQ-GEO-02][REQ-TERM-01] plays a red file, draws it centered, shows the HUD on the bottom row and restores on q', async () => {
     const r = runInPty([red3], { timeout: 15, events: [{ at: 1.5, hex: '71' }] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
@@ -177,7 +177,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     }
   });
 
-  it('paces a 30 fps source at about 30 frames per second', () => {
+  it('[REQ-SYNC-02] paces a 30 fps source at about 30 frames per second', () => {
     // A moving source: every frame differs, so every frame is written. A static one would be skipped.
     const r = runInPty([moving5], { timeout: 15, events: [{ at: 3.8, hex: '71' }] });
     expect(r.timedOut).toBe(false);
@@ -195,7 +195,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     expect(count).toBeLessThanOrEqual(68);
   });
 
-  it('exits 0 by itself at the end of a 2 s file and restores the terminal', async () => {
+  it('[REQ-TERM-03] exits 0 by itself at the end of a 2 s file and restores the terminal', async () => {
     const r = runInPty([moving2], { timeout: ciBound(4, 8), events: [] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
@@ -210,7 +210,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     }
   });
 
-  it('redraws for the new geometry after a resize', async () => {
+  it('[REQ-TERM-02][REQ-PLAT-01] redraws for the new geometry after a resize', async () => {
     const r = runInPty([red5], {
       cols: 80,
       rows: 24,
@@ -245,7 +245,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     }
   });
 
-  it('prints one line and exits 1 for an unreadable input, without touching the terminal', () => {
+  it('[REQ-INGEST-01] prints one line and exits 1 for an unreadable input, without touching the terminal', () => {
     const r = runInPty([path.join(dir, 'no-such-file.mp4')], { timeout: 15, events: [] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(1);
@@ -255,7 +255,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     expect(r.output).toContain('frankentty:');
   });
 
-  it('plays --demo mandelbrot and quits cleanly with q', async () => {
+  it('[REQ-INGEST-03] plays --demo mandelbrot and quits cleanly with q', async () => {
     const r = runInPty(['--demo', 'mandelbrot'], { timeout: 15, events: [{ at: 2.0, hex: '71' }] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
@@ -279,7 +279,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       return replayInto(beforeRestore(r.output), 80, 24);
     }
 
-    it('--mode braille draws only Braille glyphs or spaces, and some dots', async () => {
+    it('[REQ-RENDER-06] --mode braille draws only Braille glyphs or spaces, and some dots', async () => {
       const term = await playOneSecond(['--mode', 'braille']);
       try {
         let dots = 0;
@@ -301,7 +301,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       }
     });
 
-    it('--mode ascii draws only characters of the luma ramp, and some of them', async () => {
+    it('[REQ-RENDER-06] --mode ascii draws only characters of the luma ramp, and some of them', async () => {
       const term = await playOneSecond(['--mode', 'ascii']);
       try {
         let inked = 0;
@@ -319,7 +319,7 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       }
     });
 
-    it('--palette amber paints every colored cell with an amber ramp entry', async () => {
+    it('[REQ-PAL-01] --palette amber paints every colored cell with an amber ramp entry', async () => {
       const term = await playOneSecond(['--palette', 'amber']);
       try {
         let colored = 0;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { downsampleHalfblock } from '../../src/renderer/downsample.ts';
 
-describe('downsampleHalfblock', () => {
+describe('[REQ-RENDER-01] downsampleHalfblock', () => {
   it('averages a 2x2 block with rounding half up', () => {
     // Red channel: 1, 2, 2, 2 -> 7/4 = 1.75 -> 2. Green: 0, 0, 0, 1 -> 0.25 -> 0. Blue: 0, 1, 1, 0 -> 0.5 -> 1.
     const src = Uint8Array.from([

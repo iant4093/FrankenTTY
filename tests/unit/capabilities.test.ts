@@ -16,7 +16,7 @@ import { PROBE_REQUEST } from '../../src/renderer/sequences.ts';
 const APPLE_ENV_NO_COLORTERM = { TERM: 'xterm-256color', TERM_PROGRAM: 'Apple_Terminal' };
 const APPLE_ENV = { ...APPLE_ENV_NO_COLORTERM, COLORTERM: 'truecolor' };
 
-describe('detectColorDepth', () => {
+describe('[REQ-CAP-01] detectColorDepth', () => {
   it('--color flag wins over everything', () => {
     expect(detectColorDepth(APPLE_ENV, 'darwin', '27.0.0', 24, '256')).toBe(8);
     expect(detectColorDepth(APPLE_ENV, 'darwin', '27.0.0', 24, '16')).toBe(4);
@@ -67,7 +67,7 @@ describe('detectColorDepth', () => {
   });
 });
 
-describe('detectUnicode', () => {
+describe('[REQ-CAP-03] detectUnicode', () => {
   it('assumes UTF-8 on Windows', () => {
     expect(detectUnicode({}, 'win32')).toEqual({ unicode: true, braille: true });
   });
@@ -97,7 +97,7 @@ describe('detectUnicode', () => {
   });
 });
 
-describe('installCommand', () => {
+describe('[REQ-PREREQ-01] installCommand', () => {
   it('picks the command per OS', () => {
     expect(installCommand('darwin', null)).toBe('brew install ffmpeg');
     expect(installCommand('win32', null)).toBe('winget install Gyan.FFmpeg');
@@ -108,7 +108,7 @@ describe('installCommand', () => {
   });
 });
 
-describe('ProbeParser', () => {
+describe('[REQ-CAP-02] ProbeParser', () => {
   const bytes = (s: string): Uint8Array => Uint8Array.from(Buffer.from(s, 'latin1'));
 
   it('parses the real Apple Terminal reply (window size and DA1 only)', () => {
@@ -194,7 +194,7 @@ describe('ProbeParser', () => {
   });
 });
 
-describe('deriveCellAspect and resolveCellAspect', () => {
+describe('[REQ-GEO-01] deriveCellAspect and resolveCellAspect', () => {
   it('uses the cell size when present', () => {
     expect(deriveCellAspect({ cellPx: { w: 9, h: 18 }, windowPx: null }, 80, 24)).toBe(2);
   });
@@ -236,7 +236,7 @@ describe('describeCapabilities', () => {
   });
 });
 
-describe('runProbe', () => {
+describe('[REQ-CAP-02] runProbe', () => {
   function fakeStdin() {
     const listeners = new Set<(chunk: Uint8Array | string) => void>();
     let resumed = false;

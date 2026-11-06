@@ -40,7 +40,7 @@ function blockPixels(pixels: Uint8Array, cols: number, cx: number, cy: number): 
 }
 
 // P6 (braille): invariants of the 2x4 block -> glyph/fg/bg mapping.
-describe('P6 braille cell builder', () => {
+describe('[P6][REQ-RENDER-06] braille cell builder', () => {
   it('keeps glyphs in range, colors inside the block, and splits ON/OFF around the mean luma', () => {
     fc.assert(
       fc.property(cases, ({ cols, rows, pixels }) => {

@@ -24,7 +24,7 @@ function constantFrame(size: number, index: number): Uint8Array {
   return new Uint8Array(size).fill(index % 251);
 }
 
-describe('P4a: any chunking of k frames yields exactly those k frames', () => {
+describe('[P4a][REQ-INGEST-06] any chunking of k frames yields exactly those k frames', () => {
   it('holds for random frame contents and chunk sizes', () => {
     fc.assert(
       fc.property(
@@ -72,7 +72,7 @@ describe('P4a: any chunking of k frames yields exactly those k frames', () => {
   });
 });
 
-describe('P4b: stale generations never produce frames', () => {
+describe('[P4b][REQ-INGEST-05] stale generations never produce frames', () => {
   it('only generation g frames appear and staleChunks counts the rest', () => {
     fc.assert(
       fc.property(
@@ -125,7 +125,7 @@ describe('P4b: stale generations never produce frames', () => {
   });
 });
 
-describe('P4c: a sometimes-consumer never sees a corrupted frame', () => {
+describe('[P4c][REQ-INGEST-06] a sometimes-consumer never sees a corrupted frame', () => {
   it('framesCompleted = taken + dropped + queued, and every taken frame is uniform', () => {
     fc.assert(
       fc.property(

@@ -19,7 +19,7 @@ const cases: Case[] = [
 ];
 
 for (const { label, mapper, first, last } of cases) {
-  describe(`${label}-color mapper`, () => {
+  describe(`[REQ-RENDER-08] ${label}-color mapper`, () => {
     const candidate = fc.integer({ min: first, max: last });
 
     it('(a) map returns a valid index', () => {

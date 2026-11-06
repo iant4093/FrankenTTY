@@ -13,9 +13,13 @@ fail=()
 for d in .kiro/steering .kiro/specs .kiro/hooks .kiro/agents; do
   [ -d "$d" ] || fail+=("missing $d")
 done
-if git check-ignore -q .kiro .kiro/steering/product.md .kiro/hooks/review-and-pbt.json 2>/dev/null; then
-  fail+=(".gitignore ignores .kiro (forbidden)")
-fi
+# `git check-ignore -q` accepts one path at a time (more than one exits 128), so check each.
+for p in .kiro .kiro/steering/product.md .kiro/specs/frankentty/requirements.md .kiro/hooks/review-and-pbt.json .kiro/agents/builder-sonnet.json; do
+  if git check-ignore -q --no-index "$p" 2>/dev/null; then
+    fail+=(".gitignore ignores $p (forbidden: .kiro must stay tracked)")
+    break
+  fi
+done
 grep -q '^MIT License' LICENSE 2>/dev/null || fail+=("LICENSE missing or not MIT")
 if grep -rIl --exclude-dir=node_modules --exclude-dir=build --exclude-dir=dist -E 'AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|npm_[A-Za-z0-9]{36}' . 2>/dev/null | grep -q .; then
   fail+=("possible secret in tracked files")

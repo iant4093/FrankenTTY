@@ -3,7 +3,7 @@ import { createPipeline, effectiveMode } from '../../src/player/pipeline.ts';
 import type { PipelineOptions } from '../../src/player/pipeline.ts';
 import { ASCII_RAMP } from '../../src/renderer/ascii.ts';
 import { AMBER_RAMP } from '../../src/renderer/palette.ts';
-import { SYNC_BEGIN } from '../../src/renderer/sequences.ts';
+import { SGR_RESET, SYNC_BEGIN, SYNC_END } from '../../src/renderer/sequences.ts';
 import { readCell, replayInto } from '../helpers/emulator.ts';
 
 const COLS = 8;
@@ -43,7 +43,7 @@ function text(buf: Uint8Array): string {
   return Buffer.from(buf).toString('utf8');
 }
 
-describe('createPipeline', () => {
+describe('[REQ-RENDER-04][REQ-RENDER-05] createPipeline', () => {
   it('exposes the decode resolution 2c x 4r', () => {
     const p = createPipeline(options());
     expect(p.decodeWidth).toBe(COLS * 2);
@@ -234,7 +234,7 @@ describe('createPipeline', () => {
     }
   });
 
-  it('braille mode draws Braille glyphs or spaces; ascii mode draws ramp characters', async () => {
+  it('[REQ-RENDER-06] braille mode draws Braille glyphs or spaces; ascii mode draws ramp characters', async () => {
     const braille = createPipeline(options({ mode: 'braille', offsetX: 0, offsetY: 0 }));
     const bTerm = await replayInto(Buffer.from(braille.render(frame())), COLS, ROWS);
     const ascii = createPipeline(options({ mode: 'ascii', offsetX: 0, offsetY: 0 }));
@@ -258,7 +258,7 @@ describe('createPipeline', () => {
     }
   });
 
-  it('amber palette output uses only ramp entries', async () => {
+  it('[REQ-PAL-01] amber palette output uses only ramp entries', async () => {
     const p = createPipeline(options({ palette: 'amber', offsetX: 0, offsetY: 0 }));
     const term = await replayInto(Buffer.from(p.render(frame())), COLS, ROWS);
     try {
@@ -283,7 +283,7 @@ describe('createPipeline', () => {
     expect(lossy.stats.sgrEmitted).toBeLessThanOrEqual(lossless.stats.sgrEmitted);
   });
 
-  it('depth 8 and 4 emit shorter first frames than depth 24', () => {
+  it('[REQ-RENDER-08] depth 8 and 4 emit shorter first frames than depth 24', () => {
     const f = frame();
     const sizes = ([24, 8, 4] as const).map((depth) => createPipeline(options({ depth })).render(f).length);
     expect(sizes[1]).toBeLessThan(sizes[0] ?? 0);
@@ -308,7 +308,7 @@ describe('createPipeline', () => {
     expect(lossless).toBeGreaterThan(0);
   });
 
-  it('setDepth() switches the mapper and keeps the screen model', () => {
+  it('[REQ-RENDER-08] setDepth() switches the mapper and keeps the screen model', () => {
     const f = frame();
     const p = createPipeline(options());
     const rgb = text(p.render(f));
@@ -382,7 +382,37 @@ describe('createPipeline', () => {
   });
 });
 
-describe('effectiveMode (REQ-CAP-03)', () => {
+describe('[REQ-RENDER-07] pipeline output buffer', () => {
+  it('every render() result is a view into one ArrayBuffer at one offset, within outputCapacity', () => {
+    const p = createPipeline(options());
+    const first = p.render(frame(0));
+    expect(first.length).toBeGreaterThan(0);
+    for (let i = 1; i <= 40; i++) {
+      if (i % 10 === 0) p.invalidate();
+      const out = p.render(frame(i % 3));
+      expect(out.buffer).toBe(first.buffer);
+      expect(out.byteOffset).toBe(first.byteOffset);
+      expect(out.length).toBeLessThanOrEqual(p.outputCapacity);
+    }
+  });
+});
+
+describe('[REQ-RENDER-04] frame framing', () => {
+  it('every non-empty render() is one SYNC_BEGIN ... SGR_RESET SYNC_END unit, including after setters and invalidation', () => {
+    const p = createPipeline(options());
+    for (let i = 0; i < 12; i++) {
+      if (i === 4) p.setMode('ascii');
+      if (i === 8) p.invalidate();
+      const t = text(p.render(frame(i)));
+      expect(t.startsWith(SYNC_BEGIN)).toBe(true);
+      expect(t.endsWith(SGR_RESET + SYNC_END)).toBe(true);
+      expect(t.split(SYNC_BEGIN)).toHaveLength(2);
+      expect(t.split(SYNC_END)).toHaveLength(2);
+    }
+  });
+});
+
+describe('[REQ-CAP-03] effectiveMode', () => {
   it('forces ascii without a UTF-8 locale', () => {
     for (const mode of ['halfblock', 'ascii', 'braille'] as const) {
       expect(effectiveMode(mode, false, false)).toBe('ascii');

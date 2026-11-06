@@ -14,7 +14,7 @@ function fakeNow(): { now: () => number; advance: (ms: number) => void; set: (ms
   };
 }
 
-describe('createClock', () => {
+describe('[REQ-SYNC-02][REQ-SYNC-03] createClock', () => {
   it('starts paused at 0', () => {
     const t = fakeNow();
     const clock = createClock({ now: t.now });
@@ -212,7 +212,7 @@ describe('createClock', () => {
   });
 });
 
-describe('createClock with an external source (audio as the master clock)', () => {
+describe('[REQ-SYNC-01] createClock with an external source (audio as the master clock)', () => {
   it('reports the source position plus the offset, whatever the wall time does', () => {
     const t = fakeNow();
     let audio = 4;

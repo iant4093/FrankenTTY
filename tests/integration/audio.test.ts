@@ -46,7 +46,7 @@ function silentPlayer(): AudioPlayer {
   return createAudioPlayer({ inputArgs: DEMO_AUDIO, volume: 0 });
 }
 
-describe.skipIf(!hasAudioTools)('audio player (real ffmpeg + ffplay, volume 0)', () => {
+describe.skipIf(!hasAudioTools)('[REQ-SYNC-04][REQ-SYNC-03] audio player (real ffmpeg + ffplay, volume 0)', () => {
   it('starts ffplay and the source, and stop() ends both within 2 s', async () => {
     const player = silentPlayer();
     player.start(0);
@@ -278,8 +278,8 @@ describe.skipIf(!hasAudioTools)('audio player (real ffmpeg + ffplay, volume 0)',
   });
 });
 
-describe('audio player without tools', () => {
-  it('builds the source and ffplay argv', () => {
+describe('[REQ-SYNC-04] audio player without tools', () => {
+  it('[REQ-SYNC-04] builds the source and ffplay argv', () => {
     expect(buildAudioDecoderArgs(['-i', 'a b.mp4'], 0)).toEqual([
       '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', 'a b.mp4',
       '-vn', '-sn', '-dn', '-ac', '2', '-ar', '48000', '-f', 's16le', 'pipe:1',
@@ -302,7 +302,7 @@ describe('audio player without tools', () => {
     expect(PCM_RATE).toBe(48_000);
   });
 
-  it('reports a missing ffplay once and then does nothing', async () => {
+  it('[REQ-PREREQ-01] reports a missing ffplay once and then does nothing', async () => {
     const player = createAudioPlayer({
       inputArgs: DEMO_AUDIO,
       volume: 0,

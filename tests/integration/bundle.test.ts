@@ -13,7 +13,7 @@ function runBundle(args: string[]) {
   return spawnSync(process.execPath, [bundlePath, ...args], { cwd: root, encoding: 'utf8', input: '' });
 }
 
-describe('CJS bundle', () => {
+describe('[REQ-DIST-01] CJS bundle', () => {
   beforeAll(() => {
     const r = spawnSync(process.execPath, ['scripts/bundle.mjs'], { cwd: root, encoding: 'utf8' });
     expect(r.stderr).toBe('');
@@ -30,7 +30,7 @@ describe('CJS bundle', () => {
     expect(readFileSync(bundlePath, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true);
   });
 
-  it('--version prints the package.json version', () => {
+  it('[REQ-CLI-01] --version prints the package.json version', () => {
     const r = runBundle(['--version']);
     expect(r.status).toBe(0);
     expect(r.stdout).toBe(`${pkgVersion}\n`);
@@ -42,7 +42,7 @@ describe('CJS bundle', () => {
     expect(r.stdout).toContain('Usage');
   }, 60_000);
 
-  it('an unknown flag exits 2', () => {
+  it('[REQ-CLI-02] an unknown flag exits 2', () => {
     const r = runBundle(['--no-such-flag']);
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('--no-such-flag');

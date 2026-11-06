@@ -41,7 +41,7 @@ async function waitFor(cond: () => boolean, timeoutMs: number): Promise<boolean>
   return cond();
 }
 
-describe('Decoder.killNow', () => {
+describe('[REQ-TERM-03] Decoder.killNow', () => {
   it('is a no-op after a spawn failure', () => {
     const dec = createDecoder({
       inputArgs: ['-i', 'x'], width: 4, height: 4, fps: 30, generation: 1, isFile: true,

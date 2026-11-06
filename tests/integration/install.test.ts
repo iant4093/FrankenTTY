@@ -116,7 +116,7 @@ function makeToolsDir(dir: string): string {
   return dir;
 }
 
-describe.skipIf(process.platform === 'win32' || !supported)('install.sh', () => {
+describe.skipIf(process.platform === 'win32' || !supported)('[REQ-DIST-01] install.sh', () => {
   beforeAll(() => {
     work = mkdtempSync(path.join(tmpdir(), 'frankentty-install-test-'));
     releaseDir = path.join(work, 'release');

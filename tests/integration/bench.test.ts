@@ -40,8 +40,8 @@ const FIELDS: (keyof BenchReport)[] = [
   'cellsSkippedPct', 'renderMsP50', 'renderMsP95', 'renderMsMax', 'decodeWallMs',
 ];
 
-describe.skipIf(!canRun)('frankentty --bench', () => {
-  it('--json prints one parseable object with sane savings and exits 0', () => {
+describe.skipIf(!canRun)('[REQ-BENCH-01] frankentty --bench', () => {
+  it('[REQ-BENCH-01][REQ-TTY-01] --json prints one parseable object with sane savings and exits 0', () => {
     const r = runMain(['--bench', '--demo', 'testsrc2', '--frames', '30', '--size', '80x24', '--json']);
     expect(r.status).toBe(0);
     expect(r.stderr).toBe('');
@@ -147,7 +147,7 @@ describe.skipIf(!canRun)('frankentty --bench', () => {
     expect(r.stderr).toContain('frankentty:');
   });
 
-  it('--size and --json are rejected without --bench (exit 2)', () => {
+  it('[REQ-CLI-02] --size and --json are rejected without --bench (exit 2)', () => {
     expect(runMain(['--demo', '--size', '80x24']).status).toBe(2);
     expect(runMain(['--demo', '--json']).status).toBe(2);
   });
@@ -272,7 +272,7 @@ describe.skipIf(!canRun)('frankentty --bench --seek-test', () => {
     }
   }, 60_000);
 
-  it('--seek-test without --bench, and with --frames, exit 2', () => {
+  it('[REQ-CLI-02] --seek-test without --bench, and with --frames, exit 2', () => {
     expect(runMain(['--demo', '--seek-test']).status).toBe(2);
     expect(runMain(['--demo', '--bench', '--seek-test', '--frames', '5']).status).toBe(2);
   });

@@ -31,7 +31,7 @@ const caseArb = fc.record({
   steps: fc.array(stepArb, { minLength: 1, maxLength: 8 }),
 });
 
-describe('P8 pipeline', () => {
+describe('[P8][REQ-RENDER-05] pipeline', () => {
   it('after any sequence of renders, mode/palette switches and invalidations, the emulator equals a fresh full render', async () => {
     await fc.assert(
       fc.asyncProperty(caseArb, async (c) => {
@@ -94,7 +94,7 @@ describe('P8 pipeline', () => {
 
 // P8b: setDepth() and setThreshold() keep the screen model: with the pixels unchanged, a second render with
 // no setter in between writes nothing, and every write uses the current depth's sequences.
-describe('P8b pipeline quality setters', () => {
+describe('[P8b][REQ-RENDER-05][REQ-RENDER-08] pipeline quality setters', () => {
   const opArb = fc.oneof(
     fc.record({ op: fc.constant('depth' as const), depth: fc.constantFrom(24 as const, 8 as const, 4 as const) }),
     fc.record({ op: fc.constant('threshold' as const), threshold: fc.integer({ min: 0, max: 100 }) }),
@@ -155,7 +155,7 @@ function shownRgb(term: Emulator, x: number, y: number, which: 'fg' | 'bg', dept
 
 // P8c: switching the color depth keeps the screen model, in RGB. With threshold 0, after any sequence of depth
 // switches and renders, the emulator shows the same colors as a fresh pipeline at the final depth.
-describe('P8c pipeline depth switches', () => {
+describe('[P8c][REQ-RENDER-08] pipeline depth switches', () => {
   const stepArb = fc.oneof(
     fc.record({ op: fc.constant('depth' as const), depth: fc.constantFrom(24 as const, 8 as const, 4 as const) }),
     fc.record({ op: fc.constant('render' as const), edits: fc.array(fc.tuple(fc.nat(), fc.integer({ min: 0, max: 255 })), { maxLength: 12 }) }),

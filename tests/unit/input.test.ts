@@ -56,7 +56,7 @@ function keysOf(text: string): KeyEvent[] {
   return events;
 }
 
-describe('key router: single-byte keys', () => {
+describe('[REQ-UI-01][REQ-TERM-03] key router: single-byte keys', () => {
   it.each([
     [' ', { type: 'toggle-pause' }],
     ['q', { type: 'quit' }],
@@ -77,7 +77,7 @@ describe('key router: single-byte keys', () => {
   });
 });
 
-describe('key router: arrows', () => {
+describe('[REQ-SYNC-05][REQ-UI-02] key router: arrows', () => {
   const left5 = { type: 'seek', deltaSec: -5 };
   const right5 = { type: 'seek', deltaSec: 5 };
   const left30 = { type: 'seek', deltaSec: -30 };
@@ -119,7 +119,7 @@ describe('key router: arrows', () => {
   });
 });
 
-describe('key router: unknown sequences and noise', () => {
+describe('[REQ-UI-02] key router: unknown sequences and noise', () => {
   it('consumes unknown CSI sequences without emitting', () => {
     expect(keysOf('\x1b[A\x1b[B\x1b[3~\x1b[1;5P\x1b[?25h\x1b[200~')).toEqual([]);
   });
@@ -167,7 +167,7 @@ describe('key router: unknown sequences and noise', () => {
   });
 });
 
-describe('key router: bounded buffer', () => {
+describe('[REQ-UI-02] key router: bounded buffer', () => {
   it('drops an unterminated sequence after 64 bytes and swallows its tail', () => {
     const { events, router } = setup();
     router.feed(bytes('\x1b[' + '1;'.repeat(60)));
@@ -197,7 +197,7 @@ describe('key router: bounded buffer', () => {
   });
 });
 
-describe('key router: lone ESC', () => {
+describe('[REQ-UI-02] key router: lone ESC', () => {
   it('emits escape on flush()', () => {
     const { events, router, timers } = setup();
     router.feed(bytes('\x1b'));
@@ -276,7 +276,7 @@ describe('key router: dispose', () => {
   });
 });
 
-describe('key router: split delivery', () => {
+describe('[REQ-UI-02] key router: split delivery', () => {
   it('decodes a sequence fed one byte at a time', () => {
     const { events, router } = setup();
     for (const b of bytes('\x1b[1;2C')) router.feed(new Uint8Array([b]));

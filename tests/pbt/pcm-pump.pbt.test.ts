@@ -23,7 +23,7 @@ const opArb = fc.oneof(
   { weight: 1, arbitrary: fc.record({ op: fc.constant('end' as const) }) },
 );
 
-describe('P9 PCM pump', () => {
+describe('[P9][REQ-SYNC-04][REQ-SYNC-03] PCM pump', () => {
   it('keeps the lead bound, writes nothing while paused or held, never moves the position back, and never plays old PCM', () => {
     fc.assert(
       fc.property(fc.integer({ min: 0, max: 100 }), fc.array(opArb, { minLength: 1, maxLength: 60 }), (startSec, ops) => {

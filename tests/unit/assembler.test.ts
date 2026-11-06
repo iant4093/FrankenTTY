@@ -5,7 +5,7 @@ function frame(size: number, fillByte: number): Uint8Array {
   return new Uint8Array(size).fill(fillByte);
 }
 
-describe('FrameAssembler', () => {
+describe('[REQ-INGEST-06] FrameAssembler', () => {
   it('rejects bad construction arguments', () => {
     expect(() => new FrameAssembler(0)).toThrow(RangeError);
     expect(() => new FrameAssembler(1.5)).toThrow(RangeError);
@@ -126,7 +126,7 @@ describe('FrameAssembler', () => {
   });
 });
 
-describe('GenerationalAssembler', () => {
+describe('[REQ-INGEST-05] GenerationalAssembler', () => {
   it('ignores everything before start()', () => {
     const g = new GenerationalAssembler();
     g.push(0, frame(4, 1));

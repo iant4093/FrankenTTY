@@ -38,7 +38,7 @@ class Model {
   }
 }
 
-describe('P8: clock matches a reference model', () => {
+describe('[P8][REQ-SYNC-01][REQ-SYNC-02][REQ-SYNC-03] clock matches a reference model', () => {
   it('position() follows the model, is never negative, and only moves when it should', () => {
     fc.assert(
       fc.property(

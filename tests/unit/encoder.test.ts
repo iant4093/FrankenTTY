@@ -42,7 +42,7 @@ function opts(cols: number, rows: number, mapper: ColorMapper = IDENTITY_MAPPER,
   return { cols, rows, offsetX, offsetY, mapper };
 }
 
-describe('createEncoder, 24-bit', () => {
+describe('[REQ-RENDER-02][REQ-RENDER-03][REQ-RENDER-04][REQ-RENDER-05] createEncoder, 24-bit', () => {
   it('writes exact bytes for a 1x1 grid with one combined SGR', () => {
     const enc = createEncoder(opts(1, 1));
     const out = encodeText(enc, gridOf([[GLYPH_UPPER_HALF, packRgb(10, 20, 30), packRgb(40, 50, 60)]]));
@@ -232,7 +232,7 @@ describe('createEncoder, 24-bit', () => {
   });
 });
 
-describe('createEncoder, 256 and 16 colors', () => {
+describe('[REQ-RENDER-08] createEncoder, 256 and 16 colors', () => {
   it('emits 38;5;n / 48;5;n at depth 8', () => {
     const enc = createEncoder(opts(2, 1, STUB_MAPPER_256));
     const grid = gridOf([
@@ -282,7 +282,7 @@ describe('createEncoder, 256 and 16 colors', () => {
   });
 });
 
-describe('createEncoder, naive baseline counters', () => {
+describe('[REQ-RENDER-02] createEncoder, naive baseline counters', () => {
   it('equal serializeNaive output length for the same half-block frame', () => {
     for (const [cols, rows, ox, oy] of [[1, 1, 0, 0], [7, 3, 0, 0], [12, 5, 9, 99], [20, 4, 120, 7]] as const) {
       const pixels = new Uint8Array(cols * rows * 2 * 3);
@@ -310,7 +310,7 @@ describe('createEncoder, naive baseline counters', () => {
   });
 });
 
-describe('createEncoder, invalidateRows and the RGB screen model', () => {
+describe('[REQ-RENDER-05] createEncoder, invalidateRows and the RGB screen model', () => {
   it('invalidateRows() rewrites only the given rows, clipped to the area', () => {
     const enc = createEncoder(opts(3, 4, IDENTITY_MAPPER, 2, 1));
     const grid = createCellGrid(3, 4);
@@ -350,11 +350,53 @@ describe('createEncoder, invalidateRows and the RGB screen model', () => {
   });
 });
 
-describe('createEncoder, validation', () => {
+describe('[REQ-RENDER-07] createEncoder, validation', () => {
   it('rejects bad geometry and mismatched grids', () => {
     expect(() => createEncoder(opts(0, 1))).toThrow(RangeError);
     expect(() => createEncoder(opts(1, 1, IDENTITY_MAPPER, -1, 0))).toThrow(RangeError);
     expect(() => createEncoder(opts(5, 1, IDENTITY_MAPPER, 9996, 0))).toThrow(RangeError);
     expect(() => createEncoder(opts(2, 2)).encode(createCellGrid(3, 2), 0)).toThrow(RangeError);
+  });
+});
+
+describe('[REQ-RENDER-07] preallocated output buffer', () => {
+  it('encode() returns a view into one ArrayBuffer for every frame, changed or not, within capacity', () => {
+    const cols = 6;
+    const rows = 3;
+    const enc = createEncoder(opts(cols, rows));
+    const grid = createCellGrid(cols, rows);
+    let backing: ArrayBufferLike | null = null;
+    let offset = -1;
+    for (let frame = 0; frame < 40; frame++) {
+      for (let i = 0; i < cols * rows; i++) {
+        setCell(grid, i, GLYPH_UPPER_HALF, packRgb((i * 40 + frame * 7) & 255, frame & 255, 90), packRgb(10, (i * 9) & 255, frame * 3 & 255));
+      }
+      // Every fifth frame repeats the previous grid, so the encoder returns the empty view.
+      const out = enc.encode(grid, 0);
+      const again = frame % 5 === 4 ? enc.encode(grid, 0) : out;
+      for (const view of [out, again]) {
+        backing ??= view.buffer;
+        if (offset < 0) offset = view.byteOffset;
+        expect(view.buffer).toBe(backing);
+        expect(view.byteOffset).toBe(offset);
+        expect(view.length).toBeLessThanOrEqual(enc.capacity);
+      }
+    }
+    expect(backing).not.toBeNull();
+  });
+
+  it('serializeNaive() returns a view into the same ArrayBuffer for every frame, within capacity', () => {
+    const cols = 5;
+    const rows = 2;
+    const ser = createHalfblockSerializer(cols, rows);
+    const pixels = new Uint8Array(cols * rows * 2 * 3);
+    let backing: ArrayBufferLike | null = null;
+    for (let frame = 0; frame < 20; frame++) {
+      for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 31 + frame * 17) & 255;
+      const out = ser.serializeNaive(pixels, 1, 1);
+      backing ??= out.buffer;
+      expect(out.buffer).toBe(backing);
+      expect(out.length).toBeLessThanOrEqual(ser.capacity);
+    }
   });
 });

@@ -51,7 +51,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     if (cacheDir !== '') rmSync(cacheDir, { recursive: true, force: true });
   });
 
-  it('--demo testsrc2 with audio: seek, pause, resume and quit; no child process is left', async () => {
+  it('[REQ-SYNC-03][REQ-SYNC-05][REQ-TERM-03] --demo testsrc2 with audio: seek, pause, resume and quit; no child process is left', async () => {
     const pty = startPty({
       args: ['--demo', 'testsrc2', '--av-offset', '0'],
       timeout: 25,
@@ -150,7 +150,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     expect(hudSeconds(r) ?? 0).toBeGreaterThan(hudSeconds(p2) ?? 0);
   }, 60_000);
 
-  it('m cycles ASCII then Braille; i hides and shows the HUD', async () => {
+  it('[REQ-UI-01][REQ-HUD-01] m cycles ASCII then Braille; i hides and shows the HUD', async () => {
     const pty = startPty({
       args: ['--demo', 'testsrc2', '--no-audio'],
       timeout: 20,
@@ -211,7 +211,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     expect(shown.hud).toContain('braille');
   }, 60_000);
 
-  it('SIGTERM during playback with audio restores the terminal and leaves no children', async () => {
+  it('[REQ-TERM-03] SIGTERM during playback with audio restores the terminal and leaves no children', async () => {
     const pty = startPty({
       args: ['--demo', 'life'],
       timeout: 20,

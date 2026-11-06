@@ -58,7 +58,7 @@ function fed(pump: PcmPump, ms: number, fill = 1): void {
   pump.feed(pcm(ms, fill));
 }
 
-describe('constants', () => {
+describe('[REQ-SYNC-04] constants', () => {
   it('are the documented values', () => {
     expect(LEAD_MS).toBe(120);
     expect(CHUNK_MS).toBe(20);
@@ -67,7 +67,7 @@ describe('constants', () => {
   });
 });
 
-describe('createPcmPump', () => {
+describe('[REQ-SYNC-04][REQ-SYNC-03] createPcmPump', () => {
   it('holds before release(): nothing is written, the position stays at the segment start', () => {
     const { pump, sink, run } = rig({ startSec: 12 });
     fed(pump, 500);

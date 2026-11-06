@@ -29,7 +29,7 @@ function fakeStreams() {
   };
 }
 
-describe('sequences', () => {
+describe('[REQ-TERM-03] sequences', () => {
   it('builds RESTORE_SEQUENCE in the required order', () => {
     expect(RESTORE_SEQUENCE).toBe(SYNC_END + SGR_RESET + AUTOWRAP_ON + CURSOR_SHOW + ALT_OFF);
     expect(RESTORE_SEQUENCE).toBe('\x1b[?2026l\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l');
@@ -51,7 +51,7 @@ describe('sequences', () => {
   });
 });
 
-describe('createScreen', () => {
+describe('[REQ-TERM-01][REQ-TERM-03] createScreen', () => {
   it('enter writes the startup sequences and enables raw mode', () => {
     const s = fakeStreams();
     const screen = createScreen(s.stdout, s.stdin);
@@ -144,7 +144,7 @@ describe('drawCentered', () => {
   });
 });
 
-describe('installExitTraps', () => {
+describe('[REQ-TERM-03][REQ-PLAT-01] installExitTraps', () => {
   function setup(platform: string) {
     const emitter = new EventEmitter();
     const exit = vi.fn();

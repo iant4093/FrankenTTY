@@ -47,7 +47,7 @@ function run(c: Case) {
 
 const EPS = 1e-9;
 
-describe('geometry properties (P1)', () => {
+describe('[P1][REQ-GEO-01][REQ-GEO-02][REQ-TERM-02] geometry properties', () => {
   it('P1a containment', () => {
     fc.assert(
       fc.property(either, (c) => {

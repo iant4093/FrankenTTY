@@ -20,7 +20,7 @@ const W = 64;
 const H = 36;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-describe.skipIf(!canRun)('demo sources through FFmpeg', () => {
+describe.skipIf(!canRun)('[REQ-INGEST-03][REQ-COMP-03] demo sources through FFmpeg', () => {
   describe.each([...DEMO_NAMES])('%s', (name) => {
     const src = getDemo(name);
 

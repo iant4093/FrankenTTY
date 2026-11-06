@@ -59,7 +59,7 @@ async function drainToEnd(dec: Decoder): Promise<{ frames: number; end: DecoderE
 describe('buildDecoderArgs', () => {
   const base = { inputArgs: ['-i', 'movie.mp4'], width: 160, height: 90, fps: 30 };
 
-  it('builds the exact argv', () => {
+  it('[REQ-INGEST-02][REQ-INGEST-04] builds the exact argv', () => {
     expect(buildDecoderArgs(base)).toEqual([
       '-hide_banner', '-loglevel', 'error', '-nostdin',
       '-i', 'movie.mp4',
@@ -122,7 +122,7 @@ describe('createDecoder without ffmpeg', () => {
 });
 
 describe.skipIf(!hasFfmpeg)('createDecoder with ffmpeg', () => {
-  it('decodes a 2 s source into exactly 60 frames, then ends with code 0', async () => {
+  it('[REQ-INGEST-02] decodes a 2 s source into exactly 60 frames, then ends with code 0', async () => {
     const dec = createDecoder({ inputArgs: FINITE, width: WIDTH, height: HEIGHT, fps: 30, generation: 7, isFile: false });
     expect(dec.generation).toBe(7);
     const { frames, end } = await drainToEnd(dec);
@@ -144,10 +144,18 @@ describe.skipIf(!hasFfmpeg)('createDecoder with ffmpeg', () => {
     await dec.stop();
   });
 
-  it('normalizes the frame rate with the fps filter', async () => {
+  it('[REQ-INGEST-04] normalizes the frame rate with the fps filter', async () => {
     const dec = createDecoder({ inputArgs: FINITE, width: WIDTH, height: HEIGHT, fps: 15, generation: 1, isFile: false });
     const { frames } = await drainToEnd(dec);
     expect(frames).toBe(30);
+    await dec.stop();
+  });
+
+  it('[REQ-INGEST-04] turns a 60 fps source into 30 fps output: 2 s give 60 frames, not 120', async () => {
+    const source60 = ['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=60:duration=2'];
+    const dec = createDecoder({ inputArgs: source60, width: WIDTH, height: HEIGHT, fps: 30, generation: 1, isFile: false });
+    const { frames } = await drainToEnd(dec);
+    expect(frames).toBe(60);
     await dec.stop();
   });
 

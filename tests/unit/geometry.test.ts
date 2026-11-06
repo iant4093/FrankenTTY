@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeGeometry } from '../../src/renderer/geometry.ts';
 
-describe('computeGeometry', () => {
+describe('[REQ-GEO-01][REQ-GEO-02][REQ-TERM-02] computeGeometry', () => {
   it('fits 1920x1080 in 80x24 at a=2.0 (width-limited, HUD row reserved)', () => {
     const g = computeGeometry({ srcWidth: 1920, srcHeight: 1080, cols: 80, rows: 24 });
     expect(g).toEqual({
@@ -51,7 +51,7 @@ describe('computeGeometry', () => {
     expect(g.offsetY).toBe(11);
   });
 
-  it('caps cells at 4200 on 244x73 and keeps the aspect', () => {
+  it('[REQ-PERF-01] caps cells at 4200 on 244x73 and keeps the aspect', () => {
     const g = computeGeometry({
       srcWidth: 1920,
       srcHeight: 1080,

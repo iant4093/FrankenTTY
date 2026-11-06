@@ -67,7 +67,7 @@ const mapperArb: fc.Arbitrary<ColorMapper> = fc.constantFrom(IDENTITY_MAPPER, MA
 const offsetArb = fc.record({ offsetX: fc.integer({ min: 0, max: 8 }), offsetY: fc.integer({ min: 0, max: 5 }) });
 
 // P2a: framing of every non-empty output.
-describe('P2a encoder framing', () => {
+describe('[P2a][REQ-RENDER-04] encoder framing', () => {
   it('starts with SYNC_BEGIN, ends with SGR_RESET SYNC_END and is valid UTF-8', () => {
     fc.assert(
       fc.property(gridDataArb, thresholdArb, mapperArb, offsetArb, (d, t, mapper, off) => {
@@ -87,7 +87,7 @@ describe('P2a encoder framing', () => {
 });
 
 // P2b: the first frame never costs more than the naive serializer.
-describe('P2b encoder non-expansion', () => {
+describe('[P2b][REQ-RENDER-02] encoder non-expansion', () => {
   it('first frame: bytes <= naiveBytes and sgrEmitted <= naiveSgr', () => {
     fc.assert(
       fc.property(gridDataArb, thresholdArb, mapperArb, offsetArb, (d, t, mapper, off) => {
@@ -106,7 +106,7 @@ function isSpace(ch: string): boolean {
 }
 
 // P2c: replaying the output in a real emulator reproduces the grid within the threshold.
-describe('P2c encoder in @xterm/headless', () => {
+describe('[P2c][REQ-RENDER-02][REQ-RENDER-03] encoder in @xterm/headless', () => {
   it('shows every glyph, and fg/bg within the threshold of the grid (exact at threshold 0)', async () => {
     await fc.assert(
       fc.asyncProperty(gridDataArb, thresholdArb, offsetArb, async (d, t, off) => {
@@ -141,7 +141,7 @@ describe('P2c encoder in @xterm/headless', () => {
 
 // P2c at depth 8: the emulator's palette indexes, read back with cell.isFgPalette()/getFgColor(), map
 // (through the 256-color table) to colors within the threshold of the mapped source.
-describe('P2c encoder in @xterm/headless at depth 8', () => {
+describe('[P2c][REQ-RENDER-08] encoder in @xterm/headless at depth 8', () => {
   it('shows every glyph, and palette-index fg/bg within the threshold of the mapped grid (exact at threshold 0)', async () => {
     await fc.assert(
       fc.asyncProperty(gridDataArb, thresholdArb, offsetArb, async (d, t, off) => {
@@ -185,7 +185,7 @@ const cellEditArb = fc.record({
   jitter: fc.integer({ min: -6, max: 6 }),
 });
 
-describe('P2d encoder deltas', () => {
+describe('[P2d][REQ-RENDER-05] encoder deltas', () => {
   it('keeps the emulator equal to the screen model and within the threshold of each frame', async () => {
     const caseArb = gridDataArb.chain((d) => {
       const n = d.cols * d.rows;

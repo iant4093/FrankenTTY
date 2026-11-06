@@ -7,7 +7,7 @@ import {
   createTrueColorMapper,
 } from '../../src/renderer/color-depth.ts';
 
-describe('createTrueColorMapper', () => {
+describe('[REQ-RENDER-08] createTrueColorMapper', () => {
   it('is the identity at depth 24', () => {
     const m = createTrueColorMapper();
     expect(m.depth).toBe(24);
@@ -18,7 +18,7 @@ describe('createTrueColorMapper', () => {
   });
 });
 
-describe('create256Mapper', () => {
+describe('[REQ-RENDER-08] create256Mapper', () => {
   const m = create256Mapper();
 
   it('has depth 8', () => {
@@ -59,7 +59,7 @@ describe('create256Mapper', () => {
   });
 });
 
-describe('create16Mapper', () => {
+describe('[REQ-RENDER-08] create16Mapper', () => {
   const m = create16Mapper();
 
   it('has depth 4', () => {
@@ -86,7 +86,7 @@ describe('create16Mapper', () => {
   });
 });
 
-describe('createMapper', () => {
+describe('[REQ-RENDER-08] createMapper', () => {
   it('returns the mapper for each depth', () => {
     expect(createMapper(24).depth).toBe(24);
     expect(createMapper(8).depth).toBe(8);

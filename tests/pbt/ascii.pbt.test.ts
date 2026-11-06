@@ -18,7 +18,7 @@ const cases = fc
   );
 
 // P6 (ascii): glyphs come from the ramp, fg stays inside the block, brighter input never picks a darker glyph.
-describe('P6 ascii cell builder', () => {
+describe('[P6][REQ-RENDER-06] ascii cell builder', () => {
   it('uses ramp glyphs, keeps fg inside the block range, and is monotonic in brightness', () => {
     fc.assert(
       fc.property(cases, ({ cols, rows, pixels, delta }) => {

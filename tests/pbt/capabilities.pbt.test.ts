@@ -80,7 +80,7 @@ function parseChunks(chunks: Uint8Array[]): ProbeResult {
   return parser.result();
 }
 
-describe('P7: probe parser', () => {
+describe('[P7][REQ-CAP-02] probe parser', () => {
   it('any interleaving and split of reply bytes yields the canonical result', () => {
     fc.assert(
       fc.property(tokensArb, fc.array(fc.nat(), { maxLength: 10 }), (tokens, cuts) => {

@@ -43,7 +43,7 @@ function setBusy(stdout: FakeStdout, busy: () => boolean): void {
   });
 }
 
-describe.skipIf(!hasFfmpeg)('busy stdout (backpressure skips)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-PERF-01] busy stdout (backpressure skips)', () => {
   beforeEach(() => {
     spies.skips.length = 0;
   });
@@ -140,7 +140,7 @@ describe.skipIf(!hasFfmpeg)('busy stdout (backpressure skips)', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('quality governor with busy-stdout skips (REQ-PERF-01)', () => {
+describe.skipIf(!hasFfmpeg)('[REQ-PERF-01] quality governor with busy-stdout skips', () => {
   beforeEach(() => {
     spies.skips.length = 0;
   });

@@ -72,7 +72,7 @@ async function expectCleanTerminal(output: string): Promise<void> {
   expect(state.modes[2026]).not.toBe(1); // synchronized output off
 }
 
-describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
+describe.skipIf(!canRun)('[REQ-TERM-03][REQ-PLAT-01] terminal teardown in a PTY', () => {
   beforeAll(async () => {
     cacheDir = makeCacheDir('teardown');
     await buildDemoCaches(cacheDir, ['mandelbrot']);
@@ -102,7 +102,7 @@ describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
     await expectCleanTerminal(r.output);
   });
 
-  it('playback runs on the alternate screen with the cursor hidden and autowrap off', async () => {
+  it('[REQ-TERM-01] playback runs on the alternate screen with the cursor hidden and autowrap off', async () => {
     const r = runInPty({ hex: '71' });
     expect(r.output).toContain(SYNC_BEGIN);
     const beforeRestore = r.output.slice(0, r.output.length - RESTORE_SEQUENCE.length);

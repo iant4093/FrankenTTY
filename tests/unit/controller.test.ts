@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { createPlayer } from '../../src/player/controller.ts';
 import type { PlayerDeps, PlayerStdin, PlayerStdout } from '../../src/player/controller.ts';
-import { CLEAR, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
+import { CLEAR, SGR_RESET, SYNC_BEGIN, SYNC_END } from '../../src/renderer/sequences.ts';
 import type { Screen } from '../../src/term/screen.ts';
 
 const hasFfmpeg = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
@@ -110,7 +110,7 @@ function setup(opts: {
 }
 
 describe.skipIf(!hasFfmpeg)('createPlayer', () => {
-  it('plays a 1 s source to the end, exits 0 and paces on the wall clock', async () => {
+  it('[REQ-SYNC-02] plays a 1 s source to the end, exits 0 and paces on the wall clock', async () => {
     const { stdout, stdin, player } = setup({ inputArgs: lavfi('a', 1) });
     const started = Date.now();
     const code = await player.start();
@@ -131,7 +131,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(player.lastError()).toBeNull();
   });
 
-  it("'q' resolves 0 and 0x03 resolves 130; listeners are removed", async () => {
+  it("[REQ-TERM-03] 'q' resolves 0 and 0x03 resolves 130; listeners are removed", async () => {
     for (const [key, code] of [['q', 0], ['\x03', 130]] as const) {
       const { stdout, stdin, player } = setup({ inputArgs: lavfi('b', null) });
       const result = player.start();
@@ -153,7 +153,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(await result).toBe(0);
   });
 
-  it('renders every frame inside the render area and keeps the HUD row free', async () => {
+  it('[REQ-GEO-02] renders every frame inside the render area and keeps the HUD row free', async () => {
     const { stdout, stdin, player } = setup({ cols: 40, rows: 12, inputArgs: lavfi('d', null) });
     const result = player.start();
     await waitFor(() => stdout.frames() > 2, STARTUP_MS);
@@ -169,6 +169,39 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     const hudRows = moves.filter((m) => m[2] !== undefined).map((m) => Number(m[1]));
     expect(hudRows.length).toBeGreaterThan(0);
     expect(new Set(hudRows)).toEqual(new Set([12]));
+  });
+
+  it('[REQ-PLAT-01][REQ-TERM-02] follows window size changes through the stdout resize event, never SIGWINCH, and removes its listener', async () => {
+    const sigwinchBefore = process.listenerCount('SIGWINCH');
+    const { stdout, stdin, player } = setup({ cols: 40, rows: 12, inputArgs: lavfi('x', null) });
+    expect(stdout.listenerCount('resize')).toBe(0);
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 1, STARTUP_MS);
+    expect(stdout.listenerCount('resize')).toBeGreaterThan(0);
+    expect(process.listenerCount('SIGWINCH')).toBe(sigwinchBefore);
+    stdin.emit('data', Buffer.from('q'));
+    expect(await result).toBe(0);
+    expect(stdout.listenerCount('resize')).toBe(0);
+  });
+
+  it('[REQ-RENDER-04] writes every video frame with exactly one write(), wrapped in sync begin and end', async () => {
+    const { stdout, stdin, player } = setup({ cols: 40, rows: 12, inputArgs: lavfi('w', null) });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 5, STARTUP_MS);
+    stdin.emit('data', Buffer.from('q'));
+    await result;
+    const texts = stdout.writes.map((w) => (typeof w === 'string' ? w : Buffer.from(w).toString('utf8')));
+    const framed = texts.filter((t) => t.includes(SYNC_BEGIN));
+    expect(framed.length).toBeGreaterThan(5);
+    for (const t of framed) {
+      expect(t.startsWith(SYNC_BEGIN)).toBe(true);
+      expect(t.endsWith(SGR_RESET + SYNC_END)).toBe(true);
+      expect(t.split(SYNC_BEGIN)).toHaveLength(2);
+      expect(t.split(SYNC_END)).toHaveLength(2);
+    }
+    // No frame is split over several writes: the begin marks and the end marks pair up one to one.
+    expect(stdout.text().split(SYNC_BEGIN).length - 1).toBe(framed.length);
+    expect(stdout.text().split(SYNC_END).length - 1).toBe(framed.length);
   });
 
   it('skips rendering while stdout needs a drain, and counts it', async () => {
@@ -206,7 +239,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(await result).toBe(0);
   });
 
-  it('debounces resize by 150 ms, clears the screen and redraws for the new geometry', async () => {
+  it('[REQ-TERM-02][REQ-PLAT-01] debounces resize by 150 ms, clears the screen and redraws for the new geometry', async () => {
     const { stdout, stdin, player } = setup({ cols: 40, rows: 12, inputArgs: lavfi('h', null) });
     const result = player.start();
     await waitFor(() => stdout.frames() > 2, STARTUP_MS);
@@ -241,7 +274,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(await result).toBe(0);
   });
 
-  it('loops: restarts at 0 when the stream ends', async () => {
+  it('[REQ-CLI-01] loops: restarts at 0 when the stream ends', async () => {
     const { stdout, stdin, player } = setup({ inputArgs: lavfi('i', 0.5), loop: true });
     const result = player.start();
     // A 0.5 s source has 15 frames per pass, so more than 30 frames means at least two loop
@@ -264,7 +297,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     return [...text.matchAll(/\x1b\[(\d+);\d+H(?!\x1b\[0;37;40m)/g)].map((m) => Number(m[1]));
   }
 
-  it('writes a static picture once in full, then only the rolling-refresh row of each frame', async () => {
+  it('[REQ-RENDER-05] writes a static picture once in full, then only the rolling-refresh row of each frame', async () => {
     const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
     const { stdout, stdin, player } = setup({ inputArgs: still });
     const result = player.start();
@@ -287,7 +320,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(c.framesUnchanged).toBe(0);
   });
 
-  it('rewrites every row of a static picture once per refresh cycle, in order, instead of redrawing it all every 10 s', async () => {
+  it('[REQ-RENDER-05] rewrites every row of a static picture once per refresh cycle, in order, instead of redrawing it all every 10 s', async () => {
     const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
     const { stdout, stdin, player } = setup({ inputArgs: still });
     const result = player.start();
@@ -306,7 +339,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(new Set(refreshed.slice(0, n)).size).toBe(n);
   });
 
-  it('uses the requested mode: ascii draws ramp characters and no half blocks', async () => {
+  it('[REQ-RENDER-06] uses the requested mode: ascii draws ramp characters and no half blocks', async () => {
     const { stdout, stdin, player } = setup({ inputArgs: lavfi('k', null), extra: { mode: 'ascii' } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 2, STARTUP_MS);
@@ -316,7 +349,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(stdout.text()).toMatch(/[.:\-=+*#%@]/);
   });
 
-  it('uses the requested mode: braille draws Braille glyphs', async () => {
+  it('[REQ-RENDER-06] uses the requested mode: braille draws Braille glyphs', async () => {
     const { stdout, stdin, player } = setup({ inputArgs: lavfi('l', null), extra: { mode: 'braille' } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 2, STARTUP_MS);
@@ -326,7 +359,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(stdout.text()).not.toContain('\u2580');
   });
 
-  it('uses the requested color depth: 256-color sequences, no 24-bit ones', async () => {
+  it('[REQ-RENDER-08] uses the requested color depth: 256-color sequences, no 24-bit ones', async () => {
     const { stdout, stdin, player } = setup({ inputArgs: lavfi('m', null), extra: { depth: 8 } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 2, STARTUP_MS);
@@ -344,7 +377,7 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     await result;
   });
 
-  it.skipIf(!hasPgrep)('leaves no ffmpeg behind after q, and the screen cleanup kills the rest', async () => {
+  it.skipIf(!hasPgrep)('[REQ-TERM-03] leaves no ffmpeg behind after q, and the screen cleanup kills the rest', async () => {
     const marker = `zq${String(process.pid)}x`;
     const { stdin, player, cleanups } = setup({ inputArgs: lavfi(marker, null) });
     const alive = (): boolean => spawnSync('pgrep', ['-f', marker], { stdio: 'ignore' }).status === 0;
