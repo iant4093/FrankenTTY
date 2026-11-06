@@ -41,12 +41,18 @@ done task: `docs/EVIDENCE.md`.
 - [x] 4.2 [builder-sonnet] Input router + P5, HUD, resize restart. (REQ-UI-01/02, REQ-HUD-01, REQ-TERM-02)
 - [x] 4.3 [builder-sonnet] Quality governor. (REQ-PERF-01)
 - [x] 4.4 [builder-sonnet + architect-opus] Integration (audio, clock, keys, HUD, governor) and end-to-end review.
-- [ ] 4.5 [Ian] Hand check in Apple Terminal: sound, Space, arrows, m, c, i, smooth at full window.
+- [x] 4.5 [Ian] Hand check in Apple Terminal (2026-11-05): m/c smooth; seek/pause laggy, audio late, video flashy -> 4.6-4.10.
+- [x] 4.6 [builder-sonnet] PCM pump + one ffplay, audio master clock, seek barrier, no needless full redraws, rolling refresh.
+- [x] 4.7 [builder-sonnet] Seekable demo cache.
+- [x] 4.8 [builder-sonnet] Cache wiring, --seek-test. (+ govSkip fix by architect-opus)
+- [x] 4.9 [builder-sonnet] Busy-stdout skip-path regression tests.
+- [x] 4.10 [builder-sonnet] PTY test hardening for CI.
+- [ ] 4.11 [Ian] Re-check seek/pause/sync smoothness in Apple Terminal.
 
 ## Wave 4b: Distribution (Nov 23-24)
 
-- [ ] 4b.1 [architect-opus] CI `build`, `smoke`, `install-test`, `release` jobs; npm trusted publishing. (REQ-DIST-01, REQ-CI-01)
-- [ ] 4b.2 [builder-sonnet] `scripts/install.sh`, `scripts/install.ps1`.
+- [x] 4b.1 [architect-opus] CI `build`, `smoke`, `install-test`, `release` jobs; npm trusted publishing. (REQ-DIST-01, REQ-CI-01)
+- [x] 4b.2 [builder-sonnet] `scripts/install.sh`, `scripts/install.ps1`.
 - [ ] 4b.3 [Ian] First npm publish by hand; link trusted publisher.
 
 ## Wave 5: Hardening + docs (Nov 25-26)

@@ -529,3 +529,43 @@ force full-screen redraws, which paint visibly in Apple Terminal (no DEC
 or smoothness. Fix briefs: 4.6 (PCM pump into one long-lived ffplay, seek
 barrier, no needless full redraws, rolling refresh) and 4.7 (seekable demo
 cache file).
+
+### Tasks 4.6–4.10 (seek/sync fixes, demo cache, distribution): PASS
+
+| Item | Result |
+|---|---|
+| Seek latency, key → first new frame, 20 s MP4 with audio (PTY, this Mac) | 0.17–0.24 s, including the 120 ms key coalescing; 0.19–0.22 s under 4× `yes` CPU stress |
+| Frames shown in the 1 s after a seek | 28–30 of 30 |
+| ffplay processes per session (two seeks, pause, seek while paused, resume) | 1 |
+| PCM pump: written-ahead audio | 100–120 ms (`LEAD_MS` 120), 0 underruns |
+| Demo cache build, 60 s, this Mac | mandelbrot 4.7 s (67 MiB), life 1.1 s, cellauto 1.3 s, gradients 1.5 s, testsrc2 0.8 s |
+| `--seek-test`, warm cache, max first-frame latency over 1/15/30/45 s | mandelbrot 50.6 ms, life 49.7, cellauto 41.2, gradients 34.3, testsrc2 36.1 (was 2,017 ms for mandelbrot at 30 s) |
+| PBT catch #4 (P9, PCM pump): pausing after the audio source ended moved the position backwards | fixed, unit test added |
+
+**Review catch (architect-opus, 2026-11-05):** after 4.6, `govSkip` in
+`src/player/controller.ts` called itself instead of
+`governor?.recordSkip(t)`. The first tick skipped because stdout was busy
+would overflow the stack, which is exactly Apple Terminal's slow case. 721
+tests passed with the bug. Fixed in `6c75028`; task 4.9 added busy-stdout
+tests. A mutation check reintroducing the self-call makes all 4 new tests
+fail with `RangeError: Maximum call stack size exceeded`.
+
+**CI catches:** an Ubuntu apt mirror hang (install step now has retries
+and a 6 min cap); macOS 26's `sha256sum` is the BSD tool without
+`--check` (smoke uses `-c`); a "seek cache ready" HUD message raced a mode
+message in a PTY test, and a seek bound was too tight for hosted runners
+(tests now use private warm caches and CI allowances).
+
+### First release: v0.1.0 (2026-11-06)
+
+CI run [42143979994](https://github.com/iant4093/FrankenTTY/actions/runs/42143979994)
+on `7e25495`: every job **success**, including the 5-target smoke
+(macOS arm64 and x64, Linux x64 and arm64, Windows x64), installer tests on
+three OSes, and Publish release. Release `v0.1.0` assets: five archives
+(38.9–47.3 MB), `frankentty.cjs` (146 KB), `install.sh`, `install.ps1`,
+`SHA256SUMS`, with build provenance. The npm step skipped by design
+(first publish is manual).
+
+Real install check from GitHub on this Mac:
+`curl -fsSL …/releases/latest/download/install.sh` → `sh install.sh --no-ffmpeg`
+into a scratch dir → `frankentty --version` prints `0.1.0`.
