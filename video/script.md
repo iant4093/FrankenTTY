@@ -76,12 +76,12 @@ Citations: seek 0.17–0.24 s (EVIDENCE tasks 4.6–4.10); governor levels
 > specs, steering and task briefs, and reviewed every change. Claude Sonnet
 > 5.5 built each brief, often three at once in separate git worktrees.
 > Hooks ran the tests after every write and refused to end a turn until the
-> suite was green. Property-based tests caught three mistakes in my own
-> spec. A Kiro Power gives agents an MCP tool that renders a frame through a
+> suite was green. Property-based tests caught two mistakes in the spec
+> itself, and a clock bug. A Kiro Power gives agents an MCP tool that renders a frame through a
 > real terminal emulator. CI builds for five platforms, and one command
 > installs it.
 
-Citations: PBT catches #1–#3 (EVIDENCE Waves 1 and 3), parallel worktrees
+Citations: PBT catches #1, #3 and #4 (EVIDENCE Waves 1 and 3), parallel worktrees
 (Waves 2–4), MCP verification (task 3.6), release v0.1.0/v0.1.1 CI runs.
 
 ## Closing card (2:30)
