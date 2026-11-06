@@ -2,8 +2,10 @@
 //
 // One Pipeline per geometry. Every buffer (cell grid, half-block work area, encoder output and
 // screen model) is allocated in createPipeline and reused by every render() call. A geometry change
-// means a new pipeline. A mode or palette change keeps the geometry, because the decode resolution
-// is always 2c x 4r, and invalidates the screen model so the next frame redraws every cell.
+// means a new pipeline. A mode, palette, threshold or depth change keeps the geometry (the decode
+// resolution is always 2c x 4r) and keeps the screen model: it describes what the terminal shows,
+// and that did not change, so the next frame writes only the cells that differ. The model is
+// refreshed a few rows per frame (`refreshRolling`) to repair any drift.
 //
 // Pure apart from performance.now(): no I/O, no timers.
 
@@ -60,17 +62,31 @@ export interface Pipeline {
   render(decodePixels: Uint8Array): Buffer;
   /** Forgets what the terminal shows; the next render() writes every cell. */
   invalidate(): void;
-  /** Switches the cell builder. Keeps geometry, invalidates. */
+  /** Forgets what the terminal shows on rows [start, start + count) of the render area. */
+  invalidateRows(start: number, count: number): void;
+  /**
+   * Rolling refresh: marks the next `ceil(rows / 60)` rows unknown (wrapping around), so the next
+   * render() rewrites them. Over `ceil(rows / K)` calls every row is marked exactly once. Call it
+   * once per presented frame.
+   */
+  refreshRolling(): void;
+  /** Switches the cell builder. Keeps geometry and the screen model. */
   setMode(mode: Mode): void;
-  /** Switches the palette. Keeps geometry, invalidates. */
+  /** Switches the palette. Keeps geometry and the screen model. */
   setPalette(palette: Palette): void;
   /** Changes the color merge threshold. Takes effect on the next render(); the screen model stays valid. */
   setThreshold(threshold: number): void;
-  /** Switches the output color depth (new mapper and encoder). Keeps geometry, invalidates. */
+  /**
+   * Switches the output color depth (new mapper and encoder). Keeps geometry and the screen
+   * model, which holds RGB: a cell shown in 24-bit is compared with the new mapper's color in RGB.
+   */
   setDepth(depth: ColorDepth): void;
   /** Stats of the last render(). The object is reused: read it before the next call. */
   readonly stats: Readonly<PipelineStats>;
 }
+
+/** The whole screen is rewritten about every this many frames (about 2 s at 30 fps). */
+export const REFRESH_PERIOD_FRAMES = 60;
 
 /**
  * Applies the capability gates of REQ-CAP-03: without a UTF-8 locale only ASCII is allowed; without
@@ -96,6 +112,8 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   const makeEncoder = (): Encoder => createEncoder({ cols, rows, offsetX, offsetY, mapper: createMapper(depth) });
   let encoder = makeEncoder();
   const outputCapacity = encoder.capacity;
+  const refreshRows = Math.ceil(rows / REFRESH_PERIOD_FRAMES);
+  let refreshCursor = 0;
   let mode = options.mode;
   let paletteName = options.palette;
   let palette: PaletteMap = createPalette(paletteName);
@@ -159,14 +177,21 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     invalidate() {
       encoder.invalidate();
     },
+    invalidateRows(start, count) {
+      encoder.invalidateRows(start, count);
+    },
+    refreshRolling() {
+      const first = Math.min(refreshRows, rows - refreshCursor);
+      encoder.invalidateRows(refreshCursor, first);
+      if (first < refreshRows) encoder.invalidateRows(0, refreshRows - first);
+      refreshCursor = (refreshCursor + refreshRows) % rows;
+    },
     setMode(next) {
       mode = next;
-      encoder.invalidate();
     },
     setPalette(next) {
       paletteName = next;
       palette = createPalette(next);
-      encoder.invalidate();
     },
     setThreshold(next) {
       threshold = next;
@@ -175,8 +200,12 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     setDepth(next) {
       if (next === depth) return;
       depth = next;
-      // The mapper is fixed per encoder, and the screen model holds mapped colors: start afresh.
+      // The mapper is fixed per encoder. The screen model holds RGB, so it carries over as is.
+      const old = encoder;
       encoder = makeEncoder();
+      encoder.model.glyph.set(old.model.glyph);
+      encoder.model.fg.set(old.model.fg);
+      encoder.model.bg.set(old.model.bg);
     },
   };
 }

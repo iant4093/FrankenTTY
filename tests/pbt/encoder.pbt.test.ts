@@ -175,7 +175,7 @@ describe('P2c encoder in @xterm/headless at depth 8', () => {
   });
 });
 
-// P2d: after random frame sequences with deltas, the emulator equals the screen model, and the model
+// P2d: after random frame sequences with deltas and full or per-row invalidations, the emulator equals the screen model, and the model
 // stays within the threshold of every frame's source.
 const cellEditArb = fc.record({
   kind: fc.integer({ min: 0, max: 9 }), // 0-4 keep, 5-6 jitter, 7-9 replace
@@ -196,6 +196,8 @@ describe('P2d encoder deltas', () => {
         frames: fc.array(
           fc.record({
             invalidate: fc.integer({ min: 0, max: 7 }),
+            rowStart: fc.nat({ max: 5 }),
+            rowCount: fc.nat({ max: 5 }),
             edits: fc.array(cellEditArb, { minLength: n, maxLength: n }),
           }),
           { minLength: 1, maxLength: 5 },
@@ -234,6 +236,7 @@ describe('P2d encoder deltas', () => {
           if (!check()) return false;
           for (const frame of frames) {
             if (frame.invalidate === 0) enc.invalidate();
+            else if (frame.invalidate === 1) enc.invalidateRows(frame.rowStart, frame.rowCount);
             frame.edits.forEach((e, i) => {
               if (e.kind <= 4) return;
               if (e.kind <= 6) {

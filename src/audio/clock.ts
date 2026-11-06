@@ -9,12 +9,19 @@
 // position() = max(0, raw + offsetMs / 1000)
 //
 // A new clock is paused at 0 until start() or resume() is called.
+//
+// External source. With `source` (the audio player's `positionSec`) the clock does not count
+// time itself: raw = source(). The audio output is then the master clock (REQ-SYNC-01) and start,
+// seek, pause and resume only keep the wall-clock state in step, so that `setSource(null)` can
+// continue from the last audio position when audio fails.
 
 export interface ClockOptions {
   /** Monotonic time source in milliseconds. Default `performance.now`. */
   now?: () => number;
   /** A/V offset in milliseconds (`--av-offset`), added to the reported position. Default 0. */
   offsetMs?: number;
+  /** Master position in seconds (without offset). When set, it replaces the wall clock. */
+  source?: () => number;
 }
 
 export interface Clock {
@@ -32,6 +39,11 @@ export interface Clock {
    * playing. Before `atMs` the position holds at that base value. No effect while paused.
    */
   anchor(atMs?: number): void;
+  /**
+   * Replaces the external source. `null` switches to wall-clock counting, continuing from the
+   * position the source reports now. A function switches to that source.
+   */
+  setSource(source: (() => number) | null): void;
   /** Current media position in seconds. Never negative. */
   position(): number;
   isPaused(): boolean;
@@ -48,6 +60,7 @@ export function createClock(opts: ClockOptions = {}): Clock {
   const offsetSec = (opts.offsetMs ?? 0) / 1000;
   assertFinite('offsetMs', offsetSec);
 
+  let source: (() => number) | null = opts.source ?? null;
   let paused = true;
   /** Position without offset at `anchorMs` while running. */
   let base = 0;
@@ -55,7 +68,10 @@ export function createClock(opts: ClockOptions = {}): Clock {
   /** Position without offset while paused. */
   let frozen = 0;
 
-  const raw = (): number => (paused ? frozen : base + Math.max(0, now() - anchorMs) / 1000);
+  const raw = (): number => {
+    if (source !== null) return source();
+    return paused ? frozen : base + Math.max(0, now() - anchorMs) / 1000;
+  };
 
   return {
     start(atSec) {
@@ -89,6 +105,19 @@ export function createClock(opts: ClockOptions = {}): Clock {
       if (atMs !== undefined) assertFinite('atMs', atMs);
       if (paused) return;
       anchorMs = atMs ?? now();
+    },
+    setSource(next) {
+      if (next === null && source !== null) {
+        const at = Math.max(0, source());
+        source = null;
+        if (paused) frozen = at;
+        else {
+          base = at;
+          anchorMs = now();
+        }
+        return;
+      }
+      source = next;
     },
     position: () => Math.max(0, raw() + offsetSec),
     isPaused: () => paused,

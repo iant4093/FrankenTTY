@@ -68,20 +68,78 @@ export function fakeScreen(): { screen: Screen; cleanups: (() => void)[] } {
   return { screen, cleanups };
 }
 
-/** Records every call. `play()` returns `spawnTime()`, so tests can model audio start latency. */
+/**
+ * Records every call and models the audio clock like the real player: the position holds at the
+ * segment start until release(), runs in wall time, and freezes while paused. `ready()` is true
+ * `readyAfterMs` after start() or seek(), so tests can model a slow audio source.
+ */
 export class FakeAudio implements AudioPlayer {
+  /** Positions passed to start() and seek(), in order. */
   plays: number[] = [];
+  starts: number[] = [];
+  seeks: number[] = [];
+  pauses = 0;
+  resumes = 0;
+  releases = 0;
   stops = 0;
   killed = 0;
   errorCallbacks: ((message: string) => void)[] = [];
   endCallbacks: (() => void)[] = [];
-  spawnTime: () => number;
-  constructor(spawnTime: () => number) {
-    this.spawnTime = spawnTime;
+  readyAfterMs = 0;
+  private now: () => number;
+  private segStart = 0;
+  private segAt = 0;
+  private runAt: number | null = null;
+  private frozen = 0;
+  private isPaused = false;
+  private isFailed = false;
+  constructor(now: () => number = () => performance.now()) {
+    this.now = now;
   }
-  play(atSec: number): number {
-    this.plays.push(atSec);
-    return this.spawnTime();
+  private begin(sec: number): void {
+    this.plays.push(sec);
+    this.segStart = sec;
+    this.segAt = this.now();
+    this.runAt = null;
+    this.frozen = 0;
+  }
+  start(atSec: number): void {
+    this.starts.push(atSec);
+    this.begin(atSec);
+  }
+  seek(sec: number): void {
+    this.seeks.push(sec);
+    this.begin(sec);
+  }
+  release(): void {
+    if (this.runAt !== null) return;
+    this.releases++;
+    this.runAt = this.now();
+  }
+  pause(): void {
+    if (this.isPaused) return;
+    this.isPaused = true;
+    this.pauses++;
+    this.frozen = this.elapsed();
+  }
+  resume(): void {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    this.resumes++;
+    if (this.runAt !== null) this.runAt = this.now() - this.frozen * 1000;
+  }
+  private elapsed(): number {
+    if (this.runAt === null) return 0;
+    return Math.max(0, this.now() - this.runAt) / 1000;
+  }
+  ready(): boolean {
+    return this.isFailed || this.now() - this.segAt >= this.readyAfterMs;
+  }
+  positionSec(): number {
+    return this.segStart + (this.isPaused ? this.frozen : this.elapsed());
+  }
+  failed(): boolean {
+    return this.isFailed;
   }
   stop(): Promise<void> {
     this.stops++;
@@ -98,6 +156,9 @@ export class FakeAudio implements AudioPlayer {
   }
   onError(cb: (message: string) => void): void {
     this.errorCallbacks.push(cb);
+  }
+  stats(): null {
+    return null;
   }
 }
 

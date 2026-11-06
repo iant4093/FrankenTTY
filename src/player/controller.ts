@@ -9,6 +9,16 @@
 // every frame up to that index and renders the newest one (late frames are dropped).
 // Ticks fire at the clock's frame boundaries. While paused no tick runs, so the decoder pipe
 // backs up and ffmpeg waits.
+//
+// Audio is the master clock when present: `audio.positionSec()` (PCM written to the long-lived
+// ffplay, minus what is queued, minus output latency). Start and seek go through a barrier: the
+// last frame stays on screen, a new decoder and audio source start, and the clock does not run
+// until the decoder has delivered its first frame and the audio source its first PCM (3 s at most).
+// Then both start together and that first frame is shown, so no frame is late and dropped.
+//
+// The screen model is never invalidated by a seek or a mode, palette, threshold or depth change: the
+// terminal shows the same thing, and a full-screen repaint is visible on terminals without
+// synchronized updates (Apple Terminal). A rolling refresh rewrites a few rows per frame instead.
 
 import { performance } from 'node:perf_hooks';
 import { createClock } from '../audio/clock.ts';
@@ -133,8 +143,11 @@ export interface Player {
 const RESIZE_DEBOUNCE_MS = 150;
 const MIN_CELL_ASPECT = 1;
 const MAX_CELL_ASPECT = 3;
-/** Full redraw interval: repairs any drift between the screen model and the terminal. */
-const FULL_REDRAW_MS = 10_000;
+/** The seek barrier gives up waiting for the first frame and the first PCM after this long. */
+const BARRIER_MAX_MS = 3000;
+const BARRIER_POLL_MS = 5;
+/** The governor ignores frame timings during the barrier and for this long after it. */
+const GOVERNOR_MUTE_MS = 500;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 /** Seek keys pressed within this time of each other are applied as one seek (REQ-SYNC-05). */
@@ -210,7 +223,13 @@ export function createPlayer(deps: PlayerDeps): Player {
   let curThreshold = baseThreshold;
   let curMaxCells: number | null = null;
   let governor: Governor | null = null;
-  const clock = createClock({ now, offsetMs: avOffsetMs });
+  const clock = createClock({
+    now,
+    offsetMs: avOffsetMs,
+    ...(audio === null ? {} : { source: (): number => audio.positionSec() }),
+  });
+  /** False once audio failed: the wall clock takes over from the last audio position. */
+  let audioUsable = audio !== null;
 
   /** Media position (audio time): the clock position without the A/V offset. */
   const mediaPos = (): number => Math.max(0, clock.position() - offsetSec);
@@ -258,7 +277,9 @@ export function createPlayer(deps: PlayerDeps): Player {
 
         let geometry: Geometry;
         let pipeline: Pipeline | null = null;
-        let lastFullRedraw = 0;
+        /** Set while the clock waits for the first frame (and PCM) of a new position. */
+        let barrier: { since: number; frame: Uint8Array | null } | null = null;
+        let governorMuteUntil = -Infinity;
         let termCols = DEFAULT_COLS;
         let termRows = DEFAULT_ROWS;
 
@@ -289,6 +310,17 @@ export function createPlayer(deps: PlayerDeps): Player {
         const statNaive = new Float64Array(STATS_CAPACITY);
         let statHead = 0;
         let statCount = 0;
+
+        /** The audio player while it is usable, else null. */
+        const liveAudio = (): AudioPlayer | null => (audioUsable ? audio : null);
+
+        /** Frame timings feed the governor only outside the barrier and its 500 ms aftermath. */
+        const govRecord = (ms: number, t: number): void => {
+          if (barrier === null && t >= governorMuteUntil) governor?.record(ms, t);
+        };
+        const govSkip = (t: number): void => {
+          if (barrier === null && t >= governorMuteUntil) govSkip(t);
+        };
 
         const killAll = (): void => {
           for (const d of live) d.killNow();
@@ -462,7 +494,6 @@ export function createPlayer(deps: PlayerDeps): Player {
               threshold: curThreshold,
             });
             composite = Buffer.allocUnsafe(pipeline.outputCapacity + hud.capacity + SYNC_END_BYTES.length);
-            lastFullRedraw = now();
           }
           hudDirty = hudVisible;
         };
@@ -505,6 +536,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             isFile,
           });
           decoder = mine;
+          if (barrier !== null) barrier.frame = null; // a held frame belongs to the previous decoder
           live.add(mine);
           mine.onEnd((info) => {
             if (decoder !== mine) return;
@@ -542,12 +574,16 @@ export function createPlayer(deps: PlayerDeps): Player {
           else startDecoder(at);
         }
 
-        /** Moves the whole timeline: clock, audio and decoder. */
+        /**
+         * Moves the whole timeline: audio source, clock and decoder. The screen keeps its last frame.
+         * The clock holds at the target and, while playing, the barrier releases it (see `barrierStep`).
+         */
         const seekTo = (targetSec: number): void => {
           stopDecoding();
+          liveAudio()?.seek(targetSec);
+          clock.pause();
           clock.seek(targetSec);
-          if (!paused && audio !== null) clock.anchor(audio.play(targetSec));
-          pipeline?.invalidate();
+          if (!paused && pipeline !== null) barrier = { since: now(), frame: null };
           if (pipeline !== null) startDecoder(clock.position());
         };
 
@@ -582,10 +618,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           const pl = pipeline;
           if (pl === null) return;
           const t = now();
-          if (t - lastFullRedraw >= FULL_REDRAW_MS) {
-            pl.invalidate();
-            lastFullRedraw = t;
-          }
+          pl.refreshRolling();
           const bytes = pl.render(frame);
           const st = pl.stats;
           pushStat(t, bytes.length, st.sgrEmitted, st.naiveSgr);
@@ -593,7 +626,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           const withHud = hudDue(t);
           if (bytes.length === 0 && !withHud) {
             counters.framesUnchanged++;
-            governor?.record(st.renderMs, t);
+            govRecord(st.renderMs, t);
             return;
           }
 
@@ -626,13 +659,18 @@ export function createPlayer(deps: PlayerDeps): Player {
           } else {
             counters.framesUnchanged++;
           }
-          governor?.record(st.renderMs + (w1 - w0), w1);
+          govRecord(st.renderMs + (w1 - w0), w1);
         };
 
         function tick(): void {
           tickTimer = null;
           const current = decoder;
           if (finished || paused || current === null) return;
+
+          if (barrier !== null) {
+            barrierStep(current);
+            return;
+          }
 
           const t = now();
           const elapsed = clock.position() - decoderStartSec;
@@ -656,7 +694,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             if (isBusy()) {
               counters.ticksSkipped++;
               counters.framesDropped += taken;
-              governor?.recordSkip(t);
+              govSkip(t);
             } else {
               counters.framesDropped += taken - 1;
               presentFrame(last);
@@ -673,6 +711,53 @@ export function createPlayer(deps: PlayerDeps): Player {
             return;
           }
           scheduleTick(starved ? Math.min(STARVED_POLL_MS, delayToNextBoundary()) : delayToNextBoundary());
+        }
+
+        /**
+         * One poll of the barrier: take the decoder's first frame, check the audio source, and when
+         * both are ready (or after 3 s) start the clock and show that frame.
+         */
+        function barrierStep(current: Decoder): void {
+          const b = barrier;
+          if (b === null) return;
+          const t = now();
+          if (b.frame === null) {
+            const frame = current.takeOldest();
+            if (frame !== null) {
+              b.frame = frame;
+              shown++;
+            }
+          }
+          const audioReady = liveAudio()?.ready() ?? true;
+          if ((b.frame !== null && audioReady) || t - b.since >= BARRIER_MAX_MS) {
+            releaseBarrier(current, b.frame);
+            return;
+          }
+          if (b.frame === null && ended) {
+            barrier = null;
+            handleEndOfStream(current);
+            return;
+          }
+          if (!isBusy() && hudDue(t)) flushHud();
+          scheduleTick(BARRIER_POLL_MS);
+        }
+
+        /** Starts the clock and the audio at the held position and shows the first frame. */
+        function releaseBarrier(current: Decoder, frame: Uint8Array | null): void {
+          barrier = null;
+          const t = now();
+          governorMuteUntil = t + GOVERNOR_MUTE_MS;
+          liveAudio()?.release();
+          clock.start(mediaPos());
+          if (frame !== null) {
+            if (isBusy()) {
+              counters.framesDropped++;
+              counters.ticksSkipped++;
+            } else {
+              presentFrame(frame);
+            }
+          }
+          if (decoder === current) scheduleTick(delayToNextBoundary());
         }
 
         /** Paused: wait for the first frame of a fresh decoder, show it, and stay paused. */
@@ -715,8 +800,16 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (!paused) {
             paused = true;
             clock.pause();
-            if (audio !== null) void audio.stop();
+            liveAudio()?.pause();
             tickTimer = clearTimer(tickTimer);
+            if (barrier !== null) {
+              // Paused while waiting for the first frame: show it (or wait for it), as after a paused seek.
+              const held = barrier.frame;
+              barrier = null;
+              if (held !== null) {
+                if (!isBusy()) presentFrame(held);
+              }
+            }
             // Paused before the first frame appeared: show that frame, as after a paused seek.
             if (decoder !== null && shown === 0) {
               pausedTimer = clearTimer(pausedTimer);
@@ -729,7 +822,11 @@ export function createPlayer(deps: PlayerDeps): Player {
           paused = false;
           pausedTimer = clearTimer(pausedTimer);
           clock.resume();
-          if (audio !== null) clock.anchor(audio.play(mediaPos()));
+          const player = liveAudio();
+          if (player !== null) {
+            player.resume();
+            player.release(); // a no-op unless a seek while paused left the source held
+          }
           touchHud();
           if (decoder !== null) scheduleTick(0);
           else if (hudVisible) flushHud();
@@ -815,17 +912,29 @@ export function createPlayer(deps: PlayerDeps): Player {
 
         screen.addCleanup(killAll);
         audio?.onError((text) => {
-          if (!finished) setMessage(`audio: ${text}`);
+          if (finished) return;
+          if (audioUsable) {
+            // The wall clock continues from the last audio position; playing goes on without sound.
+            audioUsable = false;
+            clock.setSource(null);
+          }
+          setMessage(`audio: ${text}`);
         });
         stdout.on('resize', onResize);
         stdin.on('data', onData);
         stdin.resume();
 
         layout(true);
-        clock.start(0);
-        if (audio !== null) clock.anchor(audio.play(0));
-        if (pipeline === null) showTooSmall();
-        else startDecoder(clock.position());
+        liveAudio()?.start(0); // held until the barrier releases
+        if (pipeline === null) {
+          // Nothing to wait for: play (the sound, at least) while the terminal is too small.
+          liveAudio()?.release();
+          clock.start(0);
+          showTooSmall();
+        } else {
+          barrier = { since: now(), frame: null };
+          startDecoder(clock.position());
+        }
         // Keys typed before playback started (during the capability probe) act as if typed now.
         if (deps.initialInput !== undefined && deps.initialInput.length > 0) router.feed(deps.initialInput);
       });

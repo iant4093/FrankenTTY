@@ -95,7 +95,7 @@ describe('createPipeline', () => {
     expect(p.render(f).length).toBe(first);
   });
 
-  it('setMode() invalidates, keeps geometry and switches the glyphs', () => {
+  it('setMode() keeps geometry and the screen model, and switches the glyphs', () => {
     const p = createPipeline(options());
     const f = frame();
     p.render(f);
@@ -107,20 +107,32 @@ describe('createPipeline', () => {
     expect(p.decodeHeight).toBe(ROWS * 4);
     const ascii = p.render(f);
     expect(ascii.length).toBeGreaterThan(0);
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(p.stats.cellsWritten).toBeLessThanOrEqual(COLS * ROWS);
+    expect(text(ascii)).not.toContain('\u2580');
     expect(p.render(f).length).toBe(0);
 
     p.setMode('braille');
     expect(p.mode).toBe('braille');
     expect(p.render(f).length).toBeGreaterThan(0);
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(p.render(f).length).toBe(0);
 
     p.setMode('halfblock');
     expect(p.render(f).length).toBeGreaterThan(0);
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(p.render(f).length).toBe(0);
   });
 
-  it('setPalette() invalidates and changes the colors', () => {
+  it('setMode() back to the same mode and setPalette() to the same palette write nothing for the same picture', () => {
+    const p = createPipeline(options());
+    const f = frame();
+    p.render(f);
+    p.setMode('halfblock');
+    p.setPalette('truecolor');
+    expect(p.render(f).length).toBe(0);
+    expect(p.stats.cellsWritten).toBe(0);
+    expect(p.stats.cellsWritten).toBeLessThan(COLS * ROWS);
+  });
+
+  it('setPalette() keeps the screen model and changes the colors', () => {
     const p = createPipeline(options());
     const f = frame();
     const plain = Buffer.from(p.render(f));
@@ -130,9 +142,77 @@ describe('createPipeline', () => {
     expect(p.palette).toBe('amber');
     const amber = p.render(f);
     expect(amber.length).toBeGreaterThan(0);
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(p.stats.cellsWritten).toBeLessThanOrEqual(COLS * ROWS);
     expect(Buffer.from(amber).equals(plain)).toBe(false);
     expect(p.render(f).length).toBe(0);
+  });
+
+  it('invalidateRows() rewrites exactly those rows', () => {
+    const p = createPipeline(options());
+    const f = frame();
+    p.render(f);
+    p.invalidateRows(1, 2);
+    p.render(f);
+    expect(p.stats.cellsWritten).toBe(2 * COLS);
+    // Clipped to the area; negative and empty ranges do nothing.
+    p.invalidateRows(ROWS - 1, 10);
+    p.render(f);
+    expect(p.stats.cellsWritten).toBe(COLS);
+    p.invalidateRows(0, 0);
+    p.invalidateRows(ROWS, 3);
+    expect(p.render(f).length).toBe(0);
+  });
+
+  it('refreshRolling() marks ceil(rows / 60) rows per call and wraps around', () => {
+    const rows = 7;
+    const cols = 3;
+    const p = createPipeline(options({ cols, rows }));
+    const f = new Uint8Array(cols * 2 * rows * 4 * 3).fill(90);
+    p.render(f);
+    const seen: number[] = [];
+    for (let i = 0; i < 2 * rows; i++) {
+      p.refreshRolling();
+      const out = text(p.render(f));
+      expect(p.stats.cellsWritten).toBe(cols); // 1 row per call at 7 rows
+      const row = /\x1b\[(\d+);\d+H/.exec(out);
+      seen.push(Number(row?.[1]) - 1 - 1); // 1-based screen row, minus the 1-row offset
+    }
+    expect(seen).toEqual([0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it('over 60 frames of a static picture every row of a 60-row area is rewritten exactly once, and nothing else', () => {
+    const cols = 4;
+    const rows = 60;
+    const p = createPipeline(options({ cols, rows, offsetX: 0, offsetY: 0 }));
+    const f = new Uint8Array(cols * 2 * rows * 4 * 3).fill(120);
+    p.render(f);
+    const counts = new Array<number>(rows).fill(0);
+    for (let i = 0; i < 60; i++) {
+      p.refreshRolling();
+      const out = text(p.render(f));
+      const moves = [...out.matchAll(/\x1b\[(\d+);\d+H/g)];
+      expect(moves).toHaveLength(1);
+      expect(p.stats.cellsWritten).toBe(cols);
+      const row = Number(moves[0]?.[1]) - 1;
+      counts[row] = (counts[row] ?? 0) + 1;
+    }
+    expect(counts.every((n) => n === 1)).toBe(true);
+  });
+
+  it('with 120 rows the rolling refresh rewrites two rows per frame and covers the area in 60 frames', () => {
+    const cols = 2;
+    const rows = 120;
+    const p = createPipeline(options({ cols, rows, offsetX: 0, offsetY: 0 }));
+    const f = new Uint8Array(cols * 2 * rows * 4 * 3).fill(30);
+    p.render(f);
+    let written = 0;
+    for (let i = 0; i < 60; i++) {
+      p.refreshRolling();
+      p.render(f);
+      expect(p.stats.cellsWritten).toBe(2 * cols);
+      written += p.stats.cellsWritten;
+    }
+    expect(written).toBe(rows * cols);
   });
 
   it('draws the render area at its offsets and nowhere else', async () => {
@@ -228,7 +308,7 @@ describe('createPipeline', () => {
     expect(lossless).toBeGreaterThan(0);
   });
 
-  it('setDepth() switches the mapper and invalidates', () => {
+  it('setDepth() switches the mapper and keeps the screen model', () => {
     const f = frame();
     const p = createPipeline(options());
     const rgb = text(p.render(f));
@@ -238,7 +318,9 @@ describe('createPipeline', () => {
     p.setDepth(8);
     expect(p.depth).toBe(8);
     const indexed = text(p.render(f));
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    // Cells shown in 24-bit that differ from the 256-color choice are rewritten; none is written twice.
+    expect(p.stats.cellsWritten).toBeGreaterThan(0);
+    expect(p.stats.cellsWritten).toBeLessThanOrEqual(COLS * ROWS);
     expect(indexed).toMatch(/\x1b\[[\d;]*[34]8;5;\d+/);
     expect(indexed).not.toMatch(/\x1b\[[\d;]*[34]8;2;/);
     expect(p.render(f).length).toBe(0);
@@ -246,10 +328,47 @@ describe('createPipeline', () => {
     p.setDepth(4);
     expect(p.depth).toBe(4);
     expect(p.render(f).length).toBeGreaterThan(0);
-    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(p.stats.cellsWritten).toBeLessThanOrEqual(COLS * ROWS);
+    expect(p.render(f).length).toBe(0);
     // Same depth again is a no-op: nothing to redraw.
     p.setDepth(4);
     expect(p.render(f).length).toBe(0);
+  });
+
+  it('setDepth() compares the screen model in RGB: a 24-bit value that equals an index numerically is not "the same color"', () => {
+    // Half-block cells where top and bottom are equal are solid (space, background only): one RGB color per cell.
+    const solid = (r: number, g: number, b: number): Uint8Array => {
+      const px = new Uint8Array(COLS * 2 * ROWS * 4 * 3);
+      for (let i = 0; i < px.length; i += 3) {
+        px[i] = r;
+        px[i + 1] = g;
+        px[i + 2] = b;
+      }
+      return px;
+    };
+    // 0x0000C4 is the number 196 = the 256-color index of 0xFF0000. A model compared as indexes would call them equal.
+    const p = createPipeline(options());
+    p.render(solid(0x00, 0x00, 0xc4));
+    p.setDepth(8);
+    const red = text(p.render(solid(0xff, 0x00, 0x00)));
+    expect(p.stats.cellsWritten).toBe(COLS * ROWS);
+    expect(red).toContain('48;5;196');
+  });
+
+  it('setDepth() leaves cells alone whose 24-bit color is exactly the 256-color choice', () => {
+    // 95,135,175 is on the xterm 6x6x6 cube (index 16 + 36*1 + 6*2 + 3 = 67).
+    const px = new Uint8Array(COLS * 2 * ROWS * 4 * 3);
+    for (let i = 0; i < px.length; i += 3) {
+      px[i] = 95;
+      px[i + 1] = 135;
+      px[i + 2] = 175;
+    }
+    const p = createPipeline(options());
+    p.render(px);
+    p.setDepth(8);
+    expect(p.render(px).length).toBe(0);
+    expect(p.stats.cellsWritten).toBe(0);
+    expect(p.stats.cellsWritten).toBeLessThan(COLS * ROWS);
   });
 
   it('reports the encoder capacity as the largest possible output', () => {

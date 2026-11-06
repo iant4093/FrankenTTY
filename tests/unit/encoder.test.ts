@@ -310,6 +310,46 @@ describe('createEncoder, naive baseline counters', () => {
   });
 });
 
+describe('createEncoder, invalidateRows and the RGB screen model', () => {
+  it('invalidateRows() rewrites only the given rows, clipped to the area', () => {
+    const enc = createEncoder(opts(3, 4, IDENTITY_MAPPER, 2, 1));
+    const grid = createCellGrid(3, 4);
+    for (let i = 0; i < 12; i++) setCell(grid, i, GLYPH_UPPER_HALF, RED, BLUE);
+    enc.encode(grid, 0);
+    expect(enc.encode(grid, 0).length).toBe(0);
+
+    enc.invalidateRows(1, 2);
+    const out = encodeText(enc, grid);
+    expect(enc.stats.cellsWritten).toBe(6);
+    expect(out).toContain(cursorPosition(3, 3)); // row 1 of the area at offsetY 1, column offset 2
+    expect(out).toContain(cursorPosition(4, 3));
+    expect(out).not.toContain(cursorPosition(2, 3));
+    expect(out).not.toContain(cursorPosition(5, 3));
+
+    enc.invalidateRows(3, 99);
+    enc.encode(grid, 0);
+    expect(enc.stats.cellsWritten).toBe(3);
+    for (const [start, count] of [[-5, 0], [4, 2], [0, 0], [2, -1], [Number.NaN, 2]] as const) {
+      enc.invalidateRows(start, count);
+      expect(enc.encode(grid, 0).length).toBe(0);
+    }
+  });
+
+  it('stores RGB in the model at every depth, so it can be compared across depths', () => {
+    const enc = createEncoder(opts(2, 1, STUB_MAPPER_256));
+    const grid = gridOf([
+      [GLYPH_UPPER_HALF, RED, BLUE],
+      [GLYPH_SPACE, 0, GREEN],
+    ]);
+    enc.encode(grid, 0);
+    expect(enc.model.fg[0]).toBe(STUB_MAPPER_256.toRgb(STUB_MAPPER_256.map(RED)));
+    expect(enc.model.bg[0]).toBe(STUB_MAPPER_256.toRgb(STUB_MAPPER_256.map(BLUE)));
+    expect(enc.model.bg[1]).toBe(STUB_MAPPER_256.toRgb(STUB_MAPPER_256.map(GREEN)));
+    // The same grid is unchanged: the model comparison goes through toRgb.
+    expect(enc.encode(grid, 0).length).toBe(0);
+  });
+});
+
 describe('createEncoder, validation', () => {
   it('rejects bad geometry and mismatched grids', () => {
     expect(() => createEncoder(opts(0, 1))).toThrow(RangeError);
