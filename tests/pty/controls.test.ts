@@ -17,7 +17,7 @@ function available(cmd: string, args: string[]): boolean {
 const canRun =
   process.platform !== 'win32' &&
   available('python3', ['--version']) &&
-  spawnSync('pgrep', ['-f', 'no-such-process-marker-x'], { stdio: 'ignore' }).status === 1 && // pgrep exists
+  spawnSync('pgrep', ['-f', `no-such-process-marker-${String(process.pid)}`], { stdio: 'ignore' }).status === 1 && // pgrep exists (pid-unique: parallel probes must not match each other)
   available('ffmpeg', ['-version']) &&
   available('ffplay', ['-version']);
 
@@ -51,6 +51,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
 
     // Sample the process tree every 100 ms while the run is going.
     const seen = new Map<number, string>();
+    const seenCount = new Map<number, number>();
     const samples: { t: number; names: string[] }[] = [];
     let done = false;
     void pty.finished.then(
@@ -64,7 +65,10 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     const t0 = performance.now();
     while (!done) {
       const children = playerChildren(pty.marker);
-      for (const c of children) seen.set(c.pid, c.name);
+      for (const c of children) {
+        seen.set(c.pid, c.name);
+        seenCount.set(c.pid, (seenCount.get(c.pid) ?? 0) + 1);
+      }
       samples.push({ t: (performance.now() - t0) / 1000, names: children.map((c) => c.name) });
       await sleep(100);
     }
@@ -75,8 +79,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     await endsRestored(run);
 
     const during = (from: number, to: number): string[][] => samples.filter((s) => s.t >= from && s.t <= to).map((s) => s.names);
-    // Audio started: ffmpeg (video), ffmpeg (audio) and ffplay run while playing.
-    // (The Right key at 2.0 s restarts both for an instant, so one sample may miss a process.)
+    // Audio started: ffmpeg (video), ffmpeg (audio source) and ffplay run while playing.
     const mostly = (windows: string[][], name: string): void => {
       expect(windows.length).toBeGreaterThanOrEqual(2); // pgrep sampling is slow on hosted macOS runners
       expect(windows.filter((names) => names.includes(name)).length).toBeGreaterThanOrEqual(Math.floor(windows.length * 0.8));
@@ -84,17 +87,22 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     const playing = during(1.8, 3.3);
     mostly(playing, 'ffplay');
     expect(playing.some((names) => names.filter((n) => n === 'ffmpeg').length >= 2)).toBe(true);
-    // Paused (3.5 s .. 5.0 s): the audio pair is stopped, the video decoder stays.
+    // Paused (3.5 s .. 5.0 s): both audio processes and the video decoder stay alive.
     const paused = during(4.0, 4.8);
     expect(paused.length).toBeGreaterThanOrEqual(2); // pgrep sampling is slow on hosted macOS runners
     for (const names of paused) {
-      expect(names).not.toContain('ffplay');
+      expect(names).toContain('ffplay');
       expect(names).toContain('ffmpeg');
     }
     // Resumed: audio again.
     const resumed = during(5.6, 6.8);
     mostly(resumed, 'ffplay');
 
+    // One ffplay for the whole session: seek, pause and resume never respawn it. (main.ts also runs
+    // `ffplay -version` once as a prerequisite check; that child lives for milliseconds, so a loaded
+    // machine may sample it. The session's ffplay is seen in most samples.)
+    const sessionFfplays = [...seen].filter(([pid, n]) => n === 'ffplay' && (seenCount.get(pid) ?? 0) >= 10);
+    expect(sessionFfplays).toHaveLength(1);
     // No ffmpeg or ffplay survives q.
     expect(seen.size).toBeGreaterThanOrEqual(3);
     expect(await waitFor(() => [...seen.keys()].every((pid) => !isAlive(pid)), 4000)).toBe(true);

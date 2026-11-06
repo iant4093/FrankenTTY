@@ -211,3 +211,63 @@ describe('createClock', () => {
     expect(p).toBeLessThan(1);
   });
 });
+
+describe('createClock with an external source (audio as the master clock)', () => {
+  it('reports the source position plus the offset, whatever the wall time does', () => {
+    const t = fakeNow();
+    let audio = 4;
+    const clock = createClock({ now: t.now, offsetMs: 250, source: () => audio });
+    clock.start(0);
+    t.advance(10_000);
+    expect(clock.position()).toBeCloseTo(4.25, 12);
+    audio = 7;
+    expect(clock.position()).toBeCloseTo(7.25, 12);
+  });
+
+  it('start, seek, pause, resume and anchor do not move a sourced clock', () => {
+    const t = fakeNow();
+    const clock = createClock({ now: t.now, source: () => 9 });
+    clock.start(100);
+    clock.seek(50);
+    clock.anchor(t.now() - 5000);
+    clock.pause();
+    clock.resume();
+    expect(clock.position()).toBe(9);
+    expect(clock.isPaused()).toBe(false);
+  });
+
+  it('setSource(null) continues on the wall clock from the source position (running)', () => {
+    const t = fakeNow();
+    const clock = createClock({ now: t.now, source: () => 12 });
+    clock.start(0);
+    clock.setSource(null);
+    expect(clock.position()).toBeCloseTo(12, 12);
+    t.advance(2000);
+    expect(clock.position()).toBeCloseTo(14, 12);
+  });
+
+  it('setSource(null) while paused freezes at the source position', () => {
+    const t = fakeNow();
+    const clock = createClock({ now: t.now, source: () => 3 });
+    clock.start(0);
+    clock.pause();
+    clock.setSource(null);
+    t.advance(5000);
+    expect(clock.position()).toBeCloseTo(3, 12);
+    clock.resume();
+    t.advance(1000);
+    expect(clock.position()).toBeCloseTo(4, 12);
+  });
+
+  it('setSource(fn) attaches a source to a wall clock, and setSource(null) twice is harmless', () => {
+    const t = fakeNow();
+    const clock = createClock({ now: t.now });
+    clock.start(1);
+    clock.setSource(() => 20);
+    expect(clock.position()).toBe(20);
+    clock.setSource(null);
+    clock.setSource(null);
+    t.advance(1000);
+    expect(clock.position()).toBeCloseTo(21, 12);
+  });
+});

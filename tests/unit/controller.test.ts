@@ -7,7 +7,7 @@ import { CLEAR, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import type { Screen } from '../../src/term/screen.ts';
 
 const hasFfmpeg = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
-const hasPgrep = spawnSync('pgrep', ['-f', 'no-such-process-marker'], { stdio: 'ignore' }).status === 1;
+const hasPgrep = spawnSync('pgrep', ['-f', `no-such-process-marker-${String(process.pid)}`], { stdio: 'ignore' }).status === 1; // pid-unique: parallel probes must not match each other
 
 class FakeStdout extends EventEmitter implements PlayerStdout {
   columns: number;
@@ -27,6 +27,12 @@ class FakeStdout extends EventEmitter implements PlayerStdout {
   }
   frames(): number {
     return this.writes.filter((w) => typeof w !== 'string' && Buffer.from(w).toString().startsWith(SYNC_BEGIN)).length;
+  }
+  /** Text of every write that carries a video frame. */
+  frameTexts(): string[] {
+    return this.writes
+      .map((w) => (typeof w === 'string' ? w : Buffer.from(w).toString('utf8')))
+      .filter((t) => t.startsWith(SYNC_BEGIN));
   }
   text(): string {
     return this.writes.map((w) => (typeof w === 'string' ? w : Buffer.from(w).toString('utf8'))).join('');
@@ -253,35 +259,51 @@ describe.skipIf(!hasFfmpeg)('createPlayer', () => {
     expect(message?.split('\n')).toHaveLength(1);
   });
 
-  it('writes nothing for frames that do not change the screen, and counts them', async () => {
+  /** Screen rows (1-based) that the video part of a write positions the cursor on; the HUD row is excluded. */
+  function videoRows(text: string): number[] {
+    return [...text.matchAll(/\x1b\[(\d+);\d+H(?!\x1b\[0;37;40m)/g)].map((m) => Number(m[1]));
+  }
+
+  it('writes a static picture once in full, then only the rolling-refresh row of each frame', async () => {
     const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
     const { stdout, stdin, player } = setup({ inputArgs: still });
     const result = player.start();
-    expect(await waitFor(() => player.counters().framesUnchanged > 5, STARTUP_MS)).toBe(true);
-    expect(stdout.frames()).toBe(1);
-    const c = player.counters();
-    expect(c.framesRendered).toBe(1);
-    expect(c.bytesWritten).toBeGreaterThan(0);
+    expect(await waitFor(() => stdout.frames() > 8, STARTUP_MS)).toBe(true);
     stdin.emit('data', Buffer.from('q'));
     expect(await result).toBe(0);
+
+    const frameWrites = stdout.frameTexts();
+    const first = frameWrites[0] ?? '';
+    const areaRows = new Set(videoRows(first));
+    expect(areaRows.size).toBeGreaterThan(5); // the whole render area
+    // Every later frame repositions the cursor exactly once: one refreshed row (K = ceil(rows / 60) = 1).
+    for (const text of frameWrites.slice(1)) {
+      const rows = videoRows(text);
+      expect(rows).toHaveLength(1);
+      expect(areaRows.has(rows[0] ?? 0)).toBe(true);
+    }
+    const c = player.counters();
+    expect(c.framesRendered).toBe(stdout.frames());
+    expect(c.framesUnchanged).toBe(0);
   });
 
-  it('redraws every cell after 10 s even when nothing changed', async () => {
+  it('rewrites every row of a static picture once per refresh cycle, in order, instead of redrawing it all every 10 s', async () => {
     const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30'];
-    let offset = 0;
-    const { stdout, stdin, player } = setup({
-      inputArgs: still,
-      extra: { now: () => performance.now() + offset },
-    });
+    const { stdout, stdin, player } = setup({ inputArgs: still });
     const result = player.start();
-    expect(await waitFor(() => player.counters().framesUnchanged > 5, STARTUP_MS)).toBe(true);
-    expect(stdout.frames()).toBe(1);
-    offset = 10_000;
-    expect(await waitFor(() => stdout.frames() === 2, STARTUP_MS)).toBe(true);
-    await sleep(200);
-    expect(stdout.frames()).toBe(2);
+    expect(await waitFor(() => stdout.frames() > 30, STARTUP_MS)).toBe(true);
     stdin.emit('data', Buffer.from('q'));
     expect(await result).toBe(0);
+
+    const frameWrites = stdout.frameTexts();
+    const areaRows = [...new Set(videoRows(frameWrites[0] ?? ''))].sort((a, b) => a - b);
+    const refreshed = frameWrites.slice(1).map((t) => videoRows(t)[0] ?? 0);
+    // The first frame already used the cursor's first row. From there each row follows once, top to
+    // bottom, and the cycle wraps.
+    const n = areaRows.length;
+    const expected = refreshed.map((_, i) => areaRows[(i + 1) % n]);
+    expect(refreshed).toEqual(expected);
+    expect(new Set(refreshed.slice(0, n)).size).toBe(n);
   });
 
   it('uses the requested mode: ascii draws ramp characters and no half blocks', async () => {

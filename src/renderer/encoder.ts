@@ -9,6 +9,10 @@
 // The model stores the color actually in effect for each cell (the reused one, when a nearby
 // color was kept), and every comparison is made against the CURRENT source, so the shown color is
 // never farther than the threshold from the source and error does not accumulate across frames.
+//
+// Model colors are always RGB (what the terminal shows), whatever the color depth. A palette
+// index and a packed RGB value can be numerically equal and mean different colors, so comparing in
+// RGB lets a caller carry the model from one depth to another without a full redraw.
 
 import type { CellGrid, ColorMapper } from './cells.ts';
 import { GLYPH_SPACE, colorDistanceSq } from './cells.ts';
@@ -43,7 +47,7 @@ export interface FrameStats {
   naiveSgr: number;
 }
 
-/** What the terminal shows, per cell. Colors are mapped values (RGB at depth 24, an index otherwise). */
+/** What the terminal shows, per cell. Colors are packed RGB, whatever the color depth (REQ-RENDER-05). */
 export interface ScreenModel {
   /** Code point shown, or 0 when unknown. */
   readonly glyph: Uint32Array;
@@ -71,6 +75,11 @@ export interface Encoder {
   encode(grid: CellGrid, thresholdSq: number): Buffer;
   /** Forgets what the terminal shows; the next frame writes every cell. */
   invalidate(): void;
+  /**
+   * Forgets what the terminal shows on rows [start, start + count) of the render area (0-based,
+   * clipped to the area). The next frame writes every cell on those rows.
+   */
+  invalidateRows(start: number, count: number): void;
   readonly stats: FrameStats;
   readonly model: ScreenModel;
   /** Size in bytes of the preallocated output buffer. */
@@ -136,6 +145,11 @@ export function createEncoder(options: EncoderOptions): Encoder {
     return is24 ? colorDistanceSq(a, b) <= tsq : colorDistanceSq(mapper.toRgb(a), mapper.toRgb(b)) <= tsq;
   }
 
+  /** True when the model color `rgb` (what is shown) looks like the mapped color `mapped` within the threshold. */
+  function nearModel(rgb: number, mapped: number): boolean {
+    return colorDistanceSq(rgb, is24 ? mapped : mapper.toRgb(mapped)) <= tsq;
+  }
+
   /** Writes cell `i` from the grid, emitting at most one SGR, and records what is now shown. */
   function writeCell(i: number): void {
     const glyph = gGlyph[i] ?? GLYPH_SPACE;
@@ -156,8 +170,8 @@ export function createEncoder(options: EncoderOptions): Encoder {
     }
     p = writeGlyph(buf, p, glyph);
     modelGlyph[i] = glyph;
-    modelBg[i] = curBg;
-    if (!solid) modelFg[i] = curFg;
+    modelBg[i] = is24 ? curBg : mapper.toRgb(curBg);
+    if (!solid) modelFg[i] = is24 ? curFg : mapper.toRgb(curFg);
     stats.cellsWritten++;
   }
 
@@ -208,6 +222,11 @@ export function createEncoder(options: EncoderOptions): Encoder {
     invalidate() {
       modelGlyph.fill(0);
     },
+    invalidateRows(start, count) {
+      const from = Math.max(0, Math.floor(start));
+      const to = Math.min(rows, Math.floor(start) + Math.floor(count));
+      if (to > from) modelGlyph.fill(0, from * cols, to * cols);
+    },
     encode(grid, thresholdSq) {
       if (grid.cols !== cols || grid.rows !== rows) {
         throw new RangeError(
@@ -238,8 +257,8 @@ export function createEncoder(options: EncoderOptions): Encoder {
           const glyph = gGlyph[i] ?? GLYPH_SPACE;
           const solid = glyph === GLYPH_SPACE;
           const bg = mapper.map(gBg[i] ?? 0);
-          let same = modelGlyph[i] === glyph && near(modelBg[i] ?? 0, bg);
-          if (same && !solid) same = near(modelFg[i] ?? 0, mapper.map(gFg[i] ?? 0));
+          let same = modelGlyph[i] === glyph && nearModel(modelBg[i] ?? 0, bg);
+          if (same && !solid) same = nearModel(modelFg[i] ?? 0, mapper.map(gFg[i] ?? 0));
           if (same) {
             if (cursorKnown) pending++;
             else stats.cellsSkipped++;

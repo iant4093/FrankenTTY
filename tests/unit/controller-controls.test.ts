@@ -57,20 +57,26 @@ describe.skipIf(!hasFfmpeg)('pause and resume (REQ-SYNC-03)', () => {
     expect(await result).toBe(0);
   });
 
-  it('stops the audio on pause and restarts it at the paused position on resume', async () => {
-    const audio = new FakeAudio(() => performance.now());
+  it('pauses and resumes the same audio output: no stop, no new start, the position continues from where it froze', async () => {
+    const audio = new FakeAudio();
     const { stdout, stdin, player } = setup({ marker: 'ctl-pause-audio', extra: { audio } });
     const result = player.start();
-    expect(audio.plays).toEqual([0]);
+    expect(audio.starts).toEqual([0]);
     await waitFor(() => stdout.frames() > 3, STARTUP_MS);
+    expect(audio.releases).toBe(1);
 
     stdin.key(' ');
-    expect(audio.stops).toBe(1);
+    expect(audio.pauses).toBe(1);
+    expect(audio.stops).toBe(0);
     const pausedAt = player.state().positionSec;
-    await sleep(100);
+    await sleep(200);
+    expect(player.state().positionSec).toBe(pausedAt);
     stdin.key(' ');
-    expect(audio.plays).toHaveLength(2);
-    expect(audio.plays[1]).toBeCloseTo(pausedAt, 3);
+    expect(audio.resumes).toBe(1);
+    expect(audio.stops).toBe(0);
+    expect(audio.plays).toEqual([0]); // never restarted
+    expect(await waitFor(() => player.state().positionSec > pausedAt + 0.2, 3000)).toBe(true);
+    expect(player.state().positionSec - pausedAt).toBeLessThan(1.5);
 
     stdin.key('q');
     expect(await result).toBe(0);
@@ -146,8 +152,8 @@ describe.skipIf(!hasFfmpeg)('seek (REQ-SYNC-05)', () => {
     expect(await result).toBe(0);
   });
 
-  it('while paused, a seek shows the new frame and stays paused; audio stays stopped', async () => {
-    const audio = new FakeAudio(() => performance.now());
+  it('while paused, a seek shows the new frame and stays paused; the audio source moves but stays held', async () => {
+    const audio = new FakeAudio();
     const { stdout, stdin, player } = setup({ marker: 'ctl-seek-paused', extra: { audio } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 3, STARTUP_MS);
@@ -157,39 +163,142 @@ describe.skipIf(!hasFfmpeg)('seek (REQ-SYNC-05)', () => {
     const pausedAt = player.state().positionSec;
     const frames = stdout.frames();
     const starts = player.counters().decoderStarts;
-    const plays = audio.plays.length;
+    const releases = audio.releases;
 
     stdin.key(RIGHT);
     expect(await waitFor(() => stdout.frames() === frames + 1, STARTUP_MS)).toBe(true);
     expect(player.counters().decoderStarts).toBe(starts + 1);
     expect(player.state().paused).toBe(true);
     expect(player.state().positionSec).toBeCloseTo(pausedAt + 5, 3);
-    expect(audio.plays).toHaveLength(plays);
+    expect(audio.seeks).toHaveLength(1);
+    expect(audio.seeks[0]).toBeCloseTo(pausedAt + 5, 3);
+    expect(audio.releases).toBe(releases); // held: no sound while paused
 
     await sleep(400);
     expect(stdout.frames()).toBe(frames + 1);
+    expect(player.state().positionSec).toBeCloseTo(pausedAt + 5, 3);
 
-    // Resuming restarts the audio at the seek target.
+    // Resuming starts the held audio at the seek target.
     stdin.key(' ');
-    expect(audio.plays).toHaveLength(plays + 1);
-    expect(audio.plays[plays]).toBeCloseTo(pausedAt + 5, 3);
+    expect(audio.resumes).toBe(1);
+    expect(audio.releases).toBe(releases + 1);
+    expect(audio.seeks).toHaveLength(1);
+    expect(audio.stops).toBe(0);
 
     stdin.key('q');
     expect(await result).toBe(0);
   });
 
-  it('while playing, a seek restarts the audio at the target and re-anchors the clock', async () => {
-    const audio = new FakeAudio(() => performance.now());
+  it('while playing, a seek moves the audio source, holds the clock and the last frame, then releases both together', async () => {
+    const audio = new FakeAudio();
     const { stdout, stdin, player } = setup({ marker: 'ctl-seek-audio', extra: { audio } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 3, STARTUP_MS);
     const before = player.state().positionSec;
+    audio.readyAfterMs = 500; // a slow source
 
     stdin.key(SHIFT_RIGHT);
-    expect(await waitFor(() => audio.plays.length === 2, 2000)).toBe(true);
-    expect(audio.plays[1]).toBeGreaterThanOrEqual(before + 30);
-    expect(audio.plays[1]).toBeLessThan(before + 31);
+    expect(await waitFor(() => audio.seeks.length === 1, 2000)).toBe(true);
+    const target = audio.seeks[0] ?? 0;
+    expect(target).toBeGreaterThanOrEqual(before + 30);
+    expect(target).toBeLessThan(before + 31);
+    expect(audio.stops).toBe(0);
+    const releases = audio.releases;
+    const frames = stdout.frames();
+    const dropped = player.counters().framesDropped;
 
+    // The new decoder has long delivered its first frame, but the audio is not ready: nothing moves.
+    await sleep(300);
+    expect(audio.releases).toBe(releases);
+    expect(player.state().positionSec).toBeCloseTo(target, 3);
+    expect(stdout.frames()).toBe(frames);
+
+    // Then the audio is ready: the clock starts at the target and that first frame is shown.
+    expect(await waitFor(() => audio.releases === releases + 1, 3000)).toBe(true);
+    expect(await waitFor(() => stdout.frames() > frames + 3, STARTUP_MS)).toBe(true);
+    expect(player.state().positionSec).toBeGreaterThanOrEqual(target);
+    expect(player.state().positionSec).toBeLessThan(target + 1.5);
+    // Nothing was dropped on account of the seek.
+    expect(player.counters().framesDropped - dropped).toBeLessThanOrEqual(2);
+
+    stdin.key('q');
+    expect(await result).toBe(0);
+  });
+
+  it('a seek never clears or fully redraws the screen: a static picture writes only a refresh row afterwards', async () => {
+    const still = ['-f', 'lavfi', '-i', 'color=c=0x3366cc:size=160x90:rate=30', '-metadata', 'title=ctl-seek-still'];
+    const { stdout, stdin, player } = setup({ marker: 'ctl-seek-still', extra: { inputArgs: still } });
+    const result = player.start();
+    expect(await waitFor(() => stdout.frames() > 5, STARTUP_MS)).toBe(true);
+    const mark = stdout.writes.length;
+    const starts = player.counters().decoderStarts;
+
+    stdin.key(RIGHT);
+    expect(await waitFor(() => player.counters().decoderStarts === starts + 1, 2000)).toBe(true);
+    const framesAtSeek = stdout.frames();
+    expect(await waitFor(() => stdout.frames() > framesAtSeek + 4, STARTUP_MS)).toBe(true);
+    stdin.key('q');
+    expect(await result).toBe(0);
+
+    expect(stdout.writes.slice(mark).includes(CLEAR)).toBe(false);
+    const after = stdout.writes
+      .slice(mark)
+      .map((_, i) => stdout.asText(mark + i))
+      .filter((t) => t.startsWith(SYNC_BEGIN));
+    expect(after.length).toBeGreaterThan(4);
+    for (const text of after) {
+      // The picture is the same before and after the seek: one refresh row per frame, never the whole area.
+      const moves = [...text.matchAll(/\x1b\[(\d+);\d+H(?!\x1b\[0;37;40m)/g)];
+      expect(moves).toHaveLength(1);
+    }
+  });
+
+  it('gives up waiting for a silent audio source after 3 s and starts anyway', async () => {
+    const audio = new FakeAudio();
+    audio.readyAfterMs = Infinity;
+    const { stdout, stdin, player } = setup({ marker: 'ctl-barrier-max', extra: { audio } });
+    const t0 = performance.now();
+    const result = player.start();
+    await sleep(1500);
+    expect(stdout.frames()).toBe(0);
+    expect(audio.releases).toBe(0);
+    expect(player.state().positionSec).toBe(0);
+    expect(await waitFor(() => audio.releases === 1, 5000)).toBe(true);
+    const waited = performance.now() - t0;
+    expect(waited).toBeGreaterThanOrEqual(2900);
+    expect(waited).toBeLessThan(4500);
+    expect(await waitFor(() => stdout.frames() > 3, STARTUP_MS)).toBe(true);
+    stdin.key('q');
+    expect(await result).toBe(0);
+  });
+
+  it('at the start, the clock and the audio wait for the first frame as well as the first PCM', async () => {
+    const audio = new FakeAudio();
+    audio.readyAfterMs = 400;
+    const { stdout, stdin, player } = setup({ marker: 'ctl-start-barrier', extra: { audio } });
+    const result = player.start();
+    expect(audio.starts).toEqual([0]);
+    expect(audio.releases).toBe(0);
+    expect(await waitFor(() => stdout.frames() === 1, STARTUP_MS)).toBe(true);
+    // The first frame appears only once the clock starts and the audio is released.
+    expect(audio.releases).toBe(1);
+    expect(player.state().positionSec).toBeLessThan(1);
+    stdin.key('q');
+    expect(await result).toBe(0);
+  });
+
+  it('a seek key during the barrier retargets from the held position', async () => {
+    const audio = new FakeAudio();
+    const { stdout, stdin, player } = setup({ marker: 'ctl-seek-twice', extra: { audio } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 3, STARTUP_MS);
+    audio.readyAfterMs = 600;
+    stdin.key(RIGHT);
+    expect(await waitFor(() => audio.seeks.length === 1, 2000)).toBe(true);
+    const first = audio.seeks[0] ?? 0;
+    stdin.key(RIGHT);
+    expect(await waitFor(() => audio.seeks.length === 2, 2000)).toBe(true);
+    expect(audio.seeks[1]).toBeCloseTo(first + 5, 3);
     stdin.key('q');
     expect(await result).toBe(0);
   });
@@ -359,18 +468,49 @@ describe.skipIf(!hasFfmpeg)('mode, palette and HUD keys (REQ-UI-01)', () => {
 });
 
 describe.skipIf(!hasFfmpeg)('audio and the clock (REQ-SYNC-01, REQ-SYNC-02)', () => {
-  it('anchors the clock at the audio spawn time', async () => {
-    const audio = new FakeAudio(() => performance.now() - 300); // audio "started" 300 ms ago
-    const { stdin, player } = setup({ marker: 'ctl-anchor', extra: { audio } });
+  it('uses the audio position as the master clock', async () => {
+    class Ahead extends FakeAudio {
+      override positionSec(): number {
+        return 42 + super.positionSec();
+      }
+    }
+    const audio = new Ahead();
+    const { stdin, player } = setup({ marker: 'ctl-master', extra: { audio } });
     const result = player.start();
-    expect(player.state().positionSec).toBeGreaterThanOrEqual(0.3);
-    expect(player.state().positionSec).toBeLessThan(0.6);
+    expect(player.state().positionSec).toBeGreaterThanOrEqual(42);
+    expect(player.state().positionSec).toBeLessThan(43);
     stdin.key('q');
     await result;
   });
 
+  it('adds --av-offset to the clock position seen by the frame loop, not to the reported media position', async () => {
+    const audio = new FakeAudio();
+    const { stdout, stdin, player } = setup({ marker: 'ctl-offset', extra: { audio, avOffsetMs: 500 } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 3, STARTUP_MS);
+    expect(player.state().positionSec).toBeLessThan(audio.positionSec() + 0.05);
+    expect(player.state().positionSec).toBeGreaterThan(audio.positionSec() - 0.05);
+    stdin.key('q');
+    await result;
+  });
+
+  it('falls back to the wall clock from the last audio position when audio fails', async () => {
+    const audio = new FakeAudio();
+    const { stdout, stdin, player } = setup({ marker: 'ctl-audio-fallback', extra: { audio } });
+    const result = player.start();
+    await waitFor(() => stdout.frames() > 3, STARTUP_MS);
+    audio.errorCallbacks[0]?.('ffplay: boom');
+    const at = player.state().positionSec;
+    const frames = stdout.frames();
+    expect(await waitFor(() => stdout.frames() > frames + 10, STARTUP_MS)).toBe(true);
+    expect(player.state().positionSec).toBeGreaterThan(at + 0.2);
+    expect(player.state().message).toBe('audio: ffplay: boom');
+    stdin.key('q');
+    expect(await result).toBe(0);
+  });
+
   it('shows an audio error on the HUD and keeps playing', async () => {
-    const audio = new FakeAudio(() => performance.now());
+    const audio = new FakeAudio();
     const { stdout, stdin, player } = setup({ marker: 'ctl-audio-err', extra: { audio } });
     const result = player.start();
     await waitFor(() => stdout.frames() > 3, STARTUP_MS);
@@ -383,7 +523,7 @@ describe.skipIf(!hasFfmpeg)('audio and the clock (REQ-SYNC-01, REQ-SYNC-02)', ()
   });
 
   it('loop restarts video and audio together at 0', async () => {
-    const audio = new FakeAudio(() => performance.now());
+    const audio = new FakeAudio();
     const { stdin, player } = setup({ marker: 'ctl-loop-audio', seconds: 0.5, extra: { audio, loop: true } });
     const result = player.start();
     expect(await waitFor(() => audio.plays.length >= 3, STARTUP_MS)).toBe(true);
