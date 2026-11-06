@@ -500,3 +500,32 @@ assertions on what each sample contains are unchanged.
 Open (accepted for now): with a negative `--av-offset`, the HUD time can
 read up to |offset| high during the first |offset| seconds. The governor
 resets to full quality after a resize (new geometry, new baseline).
+
+### Wave 4 hand check by Ian (Apple Terminal, 2026-11-05): FAIL on seek/sync
+
+Ian: seeking is "super laggy" with audio and video cutoffs; audio can be
+off and takes a while to start after pause or seek; video can be flashy.
+`m` and `c` switching was smooth.
+
+Diagnosis (architect-opus), measured on this Mac. First rgb24 frame after
+`-ss`, 240×136 output:
+
+| Source | `-ss 0` | `-ss 5` | `-ss 30` |
+|---|---|---|---|
+| mandelbrot (lavfi) | 44 ms | 323 ms | **2,017 ms** |
+| cellauto (lavfi) | 35 | 109 | 440 |
+| gradients (lavfi) | 31 | 87 | 375 |
+| life (lavfi) | 30 | 55 | 179 |
+| testsrc2 (lavfi) | 30 | 46 | 128 |
+| testsrc2 MP4 file | — | — | 47–48 |
+
+Causes: (1) lavfi demos cannot seek, so `-ss` renders from 0; (2) the clock
+is anchored at ffplay spawn time, not first sound (~0.35 s later), so
+video leads audio after every seek/resume; (3) each pause/seek respawns
+ffmpeg + ffplay; (4) the clock runs before the new decoder has a frame, so
+frames arrive late and are dropped in a burst; (5) seeks and a 10 s timer
+force full-screen redraws, which paint visibly in Apple Terminal (no DEC
+2026). Unit and PTY tests passed because they checked behavior, not timing
+or smoothness. Fix briefs: 4.6 (PCM pump into one long-lived ffplay, seek
+barrier, no needless full redraws, rolling refresh) and 4.7 (seekable demo
+cache file).
