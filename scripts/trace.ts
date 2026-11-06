@@ -78,7 +78,7 @@ const SHOWN_PER_REQUIREMENT = 3;
 /** `- **REQ-TERM-01 (changed):** WHEN …` -> `{ id: 'REQ-TERM-01', text: 'WHEN …' }`. */
 export function parseRequirements(markdown: string): Requirement[] {
   const out: Requirement[] = [];
-  for (const line of markdown.split('\n')) {
+  for (const line of markdown.split(/\r?\n/)) {
     const m = /^- \*\*(REQ-[A-Z]+-\d+)(?: \([^)]*\))?:\*\*\s*(.*)$/.exec(line);
     if (m === null) continue;
     const text = (m[2] ?? '').replace(/\*\*/g, '').replace(/`/g, '').replace(/\s+/g, ' ').trim();
@@ -112,7 +112,7 @@ const TITLE_CALL = /^\s*(?:describe|it|test)(?:\.\w+)*(?:\([^()]*\))?\(\s*(['"`]
 /** Finds the tagged titles of one test file. */
 export function scanTestSource(file: string, source: string): TaggedTitle[] {
   const out: TaggedTitle[] = [];
-  const lines = source.split('\n');
+  const lines = source.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const m = TITLE_CALL.exec(lines[i] ?? '');
     if (m === null) continue;
@@ -138,7 +138,7 @@ export function parseWorkflowJobs(yaml: string): Map<string, string> {
   const jobs = new Map<string, string>();
   let inJobs = false;
   let current: string | null = null;
-  for (const line of yaml.split('\n')) {
+  for (const line of yaml.split(/\r?\n/)) {
     if (/^jobs:\s*$/.test(line)) {
       inJobs = true;
       continue;

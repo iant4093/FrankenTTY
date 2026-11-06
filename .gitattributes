@@ -1,0 +1,4 @@
+# Keep LF everywhere so shell scripts, hooks and parsers behave the same on Windows checkouts.
+* text=auto eol=lf
+*.webp binary
+*.png binary
