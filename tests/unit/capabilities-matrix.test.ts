@@ -39,11 +39,6 @@ interface Row {
   depth: ColorDepth;
   unicode: boolean;
   braille: boolean;
-  /**
-   * Set when the current detection differs from `depth`. The test then pins what detection returns
-   * today, so the gap stays visible and a fix makes the test fail until the row is updated.
-   */
-  gap?: { actual: ColorDepth; why: string };
 }
 
 const UTF8 = 'en_US.UTF-8';
@@ -89,7 +84,6 @@ const ROWS: readonly Row[] = [
     name: 'Ghostty without COLORTERM (for example after sudo)',
     env: { TERM: 'xterm-ghostty', TERM_PROGRAM: 'ghostty', LANG: UTF8 },
     ...MAC, nodeDepth: 4, depth: 24, unicode: true, braille: true,
-    gap: { actual: 4, why: 'TERM=xterm-ghostty and TERM_PROGRAM=ghostty are not recognized; Node reports 16 colors for xterm-*' },
   },
   {
     name: 'WezTerm',
@@ -100,7 +94,6 @@ const ROWS: readonly Row[] = [
     name: 'WezTerm without COLORTERM',
     env: { TERM_PROGRAM: 'WezTerm', TERM: 'xterm-256color', LANG: UTF8 },
     ...MAC, nodeDepth: 8, depth: 24, unicode: true, braille: true,
-    gap: { actual: 8, why: 'TERM_PROGRAM=WezTerm is not recognized; Node reports 256 colors for xterm-256color' },
   },
   {
     name: 'kitty',
@@ -121,7 +114,6 @@ const ROWS: readonly Row[] = [
     name: 'Alacritty without COLORTERM',
     env: { TERM: 'alacritty', LANG: UTF8 },
     ...LINUX, nodeDepth: 1, depth: 24, unicode: true, braille: true,
-    gap: { actual: 4, why: 'TERM=alacritty is not recognized; Node reports 2 colors, which maps to 4-bit' },
   },
   {
     name: 'VS Code integrated terminal',
@@ -137,7 +129,6 @@ const ROWS: readonly Row[] = [
     name: 'GNOME Terminal (VTE) without COLORTERM',
     env: { VTE_VERSION: '7600', TERM: 'xterm-256color', LANG: UTF8 },
     ...LINUX, nodeDepth: 8, depth: 24, unicode: true, braille: true,
-    gap: { actual: 8, why: 'VTE_VERSION >= 3600 (truecolor support) is not read; Node reports 256 colors for xterm-256color' },
   },
   {
     name: 'Konsole',
@@ -148,7 +139,6 @@ const ROWS: readonly Row[] = [
     name: 'Konsole without COLORTERM',
     env: { KONSOLE_VERSION: '240802', TERM: 'xterm-256color', LANG: UTF8 },
     ...LINUX, nodeDepth: 8, depth: 24, unicode: true, braille: true,
-    gap: { actual: 8, why: 'KONSOLE_VERSION is not read; Node reports 256 colors for xterm-256color' },
   },
   {
     name: 'tmux with COLORTERM passed through',
@@ -160,6 +150,28 @@ const ROWS: readonly Row[] = [
     name: 'tmux without COLORTERM',
     env: { TERM: 'tmux-256color', TMUX: '/tmp/tmux-1000/default,4242,0', LANG: UTF8 },
     ...LINUX, nodeDepth: 24, depth: 24, unicode: true, braille: true,
+  },
+
+  // Multiplexers: the outer terminal's variables leak in, but are not trusted without COLORTERM.
+  {
+    name: 'tmux inside Ghostty without COLORTERM (TERM_PROGRAM leaks, Node says 24 for TMUX)',
+    env: { TERM: 'tmux-256color', TMUX: '/tmp/tmux-1000/default,4242,0', TERM_PROGRAM: 'ghostty', LANG: UTF8 },
+    ...MAC, nodeDepth: 24, depth: 24, unicode: true, braille: true,
+  },
+  {
+    name: 'screen inside WezTerm without COLORTERM (TERM_PROGRAM leaks, falls back to Node)',
+    env: { TERM: 'screen-256color', STY: '4242.pts-0.host', TERM_PROGRAM: 'WezTerm', LANG: UTF8 },
+    ...MAC, nodeDepth: 8, depth: 8, unicode: true, braille: true,
+  },
+  {
+    name: 'tmux inside GNOME Terminal (VTE) with TMUX set and Node at 8 (falls back to Node)',
+    env: { TERM: 'xterm-256color', TMUX: '/tmp/tmux-1000/default,4242,0', VTE_VERSION: '7600', LANG: UTF8 },
+    ...LINUX, nodeDepth: 8, depth: 8, unicode: true, braille: true,
+  },
+  {
+    name: 'tmux inside Apple Terminal on macOS 26 without COLORTERM (Node at 8)',
+    env: { TERM: 'tmux-256color', TMUX: '/tmp/tmux-501/default,4242,0', TERM_PROGRAM: 'Apple_Terminal', LANG: UTF8 },
+    ...MAC, nodeDepth: 8, depth: 8, unicode: true, braille: true,
   },
 
   // Tier 3 fallbacks
@@ -219,14 +231,7 @@ describe('[REQ-CAP-01][REQ-CAP-03][REQ-PLAT-01] capability matrix', () => {
   });
 
   it.each(ROWS.map((r) => [r.name, r] as const))('color depth: %s', (_name, row) => {
-    const detected = detectColorDepth(row.env, row.platform, row.osRelease, row.nodeDepth, 'auto');
-    if (row.gap === undefined) {
-      expect(detected).toBe(row.depth);
-    } else {
-      // Pins today's behavior. Fixing the gap makes this fail: then drop `gap` from the row.
-      expect(row.gap.actual).not.toBe(row.depth);
-      expect(detected).toBe(row.gap.actual);
-    }
+    expect(detectColorDepth(row.env, row.platform, row.osRelease, row.nodeDepth, 'auto')).toBe(row.depth);
   });
 
   it.each(ROWS.map((r) => [r.name, r] as const))('unicode and Braille: %s', (_name, row) => {
@@ -264,5 +269,3 @@ describe('[REQ-CAP-01][REQ-CAP-03][REQ-PLAT-01] capability matrix', () => {
     }
   });
 });
-
-// Detection gaps found by this matrix are listed in the task report; src/ is unchanged.

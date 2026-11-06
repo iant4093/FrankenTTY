@@ -67,6 +67,80 @@ describe('[REQ-CAP-01] detectColorDepth', () => {
   });
 });
 
+describe('[REQ-CAP-01] detectColorDepth rule table without COLORTERM', () => {
+  const depth = (env: Record<string, string>, nodeDepth = 4, platform = 'linux', release = '6.1.0'): number =>
+    detectColorDepth(env, platform, release, nodeDepth, 'auto');
+
+  it.each(['iTerm.app', 'ghostty', 'WezTerm', 'vscode', 'Hyper', 'Tabby'])('TERM_PROGRAM=%s gives 24-bit', (program) => {
+    expect(depth({ TERM_PROGRAM: program })).toBe(24);
+  });
+
+  it('TERM_PROGRAM matching is exact', () => {
+    expect(depth({ TERM_PROGRAM: 'wezterm' })).toBe(4);
+    expect(depth({ TERM_PROGRAM: 'Terminal' })).toBe(4);
+    expect(depth({ TERM_PROGRAM: '' })).toBe(4);
+  });
+
+  it.each(['xterm-ghostty', 'xterm-kitty', 'alacritty', 'wezterm', 'foot', 'foot-extra', 'contour', 'xterm-direct'])(
+    'TERM=%s gives 24-bit',
+    (term) => {
+      expect(depth({ TERM: term })).toBe(24);
+    },
+  );
+
+  it('other TERM values use the Node depth', () => {
+    expect(depth({ TERM: 'xterm' }, 4)).toBe(4);
+    expect(depth({ TERM: 'xterm-256color' }, 8)).toBe(8);
+    expect(depth({ TERM: 'alacritty-direct-extra' }, 8)).toBe(8);
+  });
+
+  it('VTE_VERSION 3599 uses the Node depth and 3600 gives 24-bit', () => {
+    expect(depth({ VTE_VERSION: '3599' }, 8)).toBe(8);
+    expect(depth({ VTE_VERSION: '3600' }, 8)).toBe(24);
+    expect(depth({ VTE_VERSION: '7600' }, 8)).toBe(24);
+  });
+
+  it('a malformed or empty VTE_VERSION is ignored', () => {
+    expect(depth({ VTE_VERSION: '' }, 8)).toBe(8);
+    expect(depth({ VTE_VERSION: 'abc' }, 8)).toBe(8);
+    expect(depth({ VTE_VERSION: '7600abc' }, 8)).toBe(8);
+  });
+
+  it('KONSOLE_VERSION set gives 24-bit, empty is ignored', () => {
+    expect(depth({ KONSOLE_VERSION: '240802' }, 8)).toBe(24);
+    expect(depth({ KONSOLE_VERSION: '' }, 8)).toBe(8);
+  });
+
+  it('COLORTERM wins and the --color flag wins over the table', () => {
+    expect(detectColorDepth({ TERM_PROGRAM: 'ghostty' }, 'linux', '6.1.0', 4, '256')).toBe(8);
+    expect(detectColorDepth({ TERM_PROGRAM: 'ghostty' }, 'linux', '6.1.0', 4, '16')).toBe(4);
+  });
+
+  describe('inside tmux or screen', () => {
+    it('does not trust TERM_PROGRAM, VTE_VERSION or KONSOLE_VERSION of the outer terminal', () => {
+      for (const outer of [{ TERM_PROGRAM: 'ghostty' }, { TERM_PROGRAM: 'iTerm.app' }, { VTE_VERSION: '7600' }, { KONSOLE_VERSION: '240802' }]) {
+        expect(depth({ ...outer, TERM: 'screen-256color' }, 8), JSON.stringify(outer)).toBe(8);
+        expect(depth({ ...outer, TERM: 'tmux-256color' }, 8), JSON.stringify(outer)).toBe(8);
+        expect(depth({ ...outer, TERM: 'xterm-256color', TMUX: '/tmp/tmux-1000/default,1,0' }, 8), JSON.stringify(outer)).toBe(8);
+      }
+    });
+
+    it('does not trust the Apple Terminal or WT_SESSION rules either', () => {
+      expect(depth({ TERM_PROGRAM: 'Apple_Terminal', TERM: 'screen' }, 8, 'darwin', '25.1.0')).toBe(8);
+      expect(depth({ WT_SESSION: 'abc', TMUX: '/tmp/x,1,0' }, 8, 'linux')).toBe(8);
+    });
+
+    it('still takes COLORTERM and the Node depth', () => {
+      expect(depth({ TERM_PROGRAM: 'ghostty', TERM: 'tmux-256color', COLORTERM: 'truecolor' }, 4)).toBe(24);
+      expect(depth({ TERM_PROGRAM: 'ghostty', TERM: 'tmux-256color', TMUX: '/tmp/x,1,0' }, 24)).toBe(24);
+    });
+
+    it('an empty TMUX does not count as a multiplexer', () => {
+      expect(depth({ TERM_PROGRAM: 'ghostty', TERM: 'xterm-256color', TMUX: '' }, 4)).toBe(24);
+    });
+  });
+});
+
 describe('[REQ-CAP-03] detectUnicode', () => {
   it('assumes UTF-8 on Windows', () => {
     expect(detectUnicode({}, 'win32')).toEqual({ unicode: true, braille: true });

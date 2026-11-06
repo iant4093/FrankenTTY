@@ -569,3 +569,25 @@ three OSes, and Publish release. Release `v0.1.0` assets: five archives
 Real install check from GitHub on this Mac:
 `curl -fsSL …/releases/latest/download/install.sh` → `sh install.sh --no-ffmpeg`
 into a scratch dir → `frankentty --version` prints `0.1.0`.
+
+---
+
+## Wave 5: hardening and docs (2026-11-06)
+
+- **Screenshots (5.2):** `scripts/render-screenshots.ts` decodes one real
+  frame, runs it through the pipeline, replays the bytes into
+  `@xterm/headless`, and rasterizes the cell buffer at 8×16 px per cell
+  (zero-dependency PNG encoder, `cwebp`). Four README images, 17–170 KB.
+- **Traceability (5.3):** test titles carry requirement and property IDs;
+  `node scripts/trace.ts` → `docs/TRACEABILITY.md`: **44 of 44
+  requirements have at least one verification** (3 by CI jobs or files).
+  Suite: 880 tests.
+- **Review catch via a new test (5.3):** `compliance-guard.sh` ran
+  `git check-ignore -q` with three paths. Git allows `-q` with one path only
+  and exits 128, and stderr was hidden, so the "`.kiro` must not be ignored"
+  check **never fired** since Wave 1. The builder wrote expected-fail tests
+  for four `.gitignore` entries; architect-opus fixed the script (one path
+  per call, `--no-index`), and the tests now pass as normal tests.
+- **Capability matrix (5.3):** 28 terminal environments. Without
+  `COLORTERM`, Ghostty, WezTerm, Alacritty, GNOME Terminal/VTE and Konsole
+  were detected below 24-bit (Node's fallback reports 4 or 8). Fix brief 5.4.

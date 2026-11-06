@@ -1,6 +1,6 @@
 {
   "name": "frankentty",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stream 30 FPS true-color video through VT100/ANSI escape codes in your terminal.",
   "author": "Ian Truong",
   "license": "MIT",

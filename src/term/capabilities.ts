@@ -8,9 +8,69 @@ import { CSI_BYTE, ESC_BYTE, PROBE_REQUEST } from '../renderer/sequences.ts';
 export type ColorDepth = 24 | 8 | 4;
 export type Env = Readonly<Record<string, string | undefined>>;
 
+interface TruecolorRule {
+  /** Short label, used by tests and for reading the table. */
+  name: string;
+  matches(env: Env, platform: string, osRelease: string): boolean;
+}
+
+const TRUECOLOR_TERM_PROGRAMS: ReadonlySet<string> = new Set(['iTerm.app', 'ghostty', 'WezTerm', 'vscode', 'Hyper', 'Tabby']);
+const TRUECOLOR_TERMS: ReadonlySet<string> = new Set([
+  'xterm-ghostty',
+  'xterm-kitty',
+  'alacritty',
+  'wezterm',
+  'foot',
+  'foot-extra',
+  'contour',
+  'xterm-direct',
+]);
+/** First VTE release with truecolor support (VTE_VERSION 0.36.00). */
+const VTE_TRUECOLOR_MIN = 3600;
+
+function isSet(value: string | undefined): value is string {
+  return value !== undefined && value !== '';
+}
+
 /**
- * Order: `--color` flag; COLORTERM truecolor/24bit; Apple Terminal on Darwin
- * 25+; WT_SESSION; Node's getColorDepth() mapped to 24, 8 or 4.
+ * Environments that identify a truecolor terminal when COLORTERM is missing.
+ * Any matching rule gives 24-bit.
+ */
+const TRUECOLOR_RULES: readonly TruecolorRule[] = [
+  {
+    name: 'Apple Terminal on Darwin 25+',
+    matches: (env, platform, osRelease) => {
+      if (env['TERM_PROGRAM'] !== 'Apple_Terminal' || platform !== 'darwin') return false;
+      const major = Number.parseInt(osRelease, 10);
+      return Number.isFinite(major) && major >= 25;
+    },
+  },
+  { name: 'WT_SESSION', matches: (env) => isSet(env['WT_SESSION']) },
+  { name: 'TERM_PROGRAM', matches: (env) => TRUECOLOR_TERM_PROGRAMS.has(env['TERM_PROGRAM'] ?? '') },
+  { name: 'TERM', matches: (env) => TRUECOLOR_TERMS.has(env['TERM'] ?? '') },
+  {
+    name: 'VTE_VERSION',
+    matches: (env) => {
+      const v = env['VTE_VERSION'];
+      return v !== undefined && /^\d+$/.test(v) && Number.parseInt(v, 10) >= VTE_TRUECOLOR_MIN;
+    },
+  },
+  { name: 'KONSOLE_VERSION', matches: (env) => isSet(env['KONSOLE_VERSION']) },
+];
+
+/**
+ * True inside tmux or GNU screen. The variables of the outer terminal
+ * (TERM_PROGRAM, VTE_VERSION, ...) leak into the session, but the
+ * multiplexer may not pass truecolor through to the application.
+ */
+export function insideMultiplexer(env: Env): boolean {
+  const term = env['TERM'] ?? '';
+  return isSet(env['TMUX']) || term.startsWith('tmux') || term.startsWith('screen');
+}
+
+/**
+ * Order: `--color` flag; COLORTERM truecolor/24bit; the truecolor rule table
+ * (skipped inside tmux/screen); Node's getColorDepth() mapped to 24, 8 or 4.
  */
 export function detectColorDepth(
   env: Env,
@@ -26,12 +86,7 @@ export function detectColorDepth(
   const colorTerm = (env['COLORTERM'] ?? '').toLowerCase();
   if (colorTerm === 'truecolor' || colorTerm === '24bit') return 24;
 
-  if (env['TERM_PROGRAM'] === 'Apple_Terminal' && platform === 'darwin') {
-    const major = Number.parseInt(osRelease, 10);
-    if (Number.isFinite(major) && major >= 25) return 24;
-  }
-
-  if (env['WT_SESSION'] !== undefined && env['WT_SESSION'] !== '') return 24;
+  if (!insideMultiplexer(env) && TRUECOLOR_RULES.some((rule) => rule.matches(env, platform, osRelease))) return 24;
 
   if (nodeDepth >= 24) return 24;
   if (nodeDepth >= 8) return 8;
