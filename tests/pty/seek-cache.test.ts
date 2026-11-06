@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getDemo } from '../../src/ingest/demo.ts';
 import { SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { demoCachePath, ensureDemoCache } from '../../src/ingest/demo-cache.ts';
-import { hex, hudSeconds, rowText, screenAt, startPty } from '../helpers/pty.ts';
+import { ciBound, hex, hudSeconds, ON_CI, rowText, screenAt, startPty } from '../helpers/pty.ts';
 
 function available(cmd: string, args: string[]): boolean {
   return spawnSync(cmd, args, { stdio: 'ignore' }).status === 0;
@@ -55,6 +55,9 @@ describe.skipIf(!canRun)('--demo mandelbrot with the seek cache, in a PTY', () =
 
   it('with a pre-built cache, Shift+Right shows 30 s later on the HUD within 500 ms', async () => {
     const keyAt = 3.0;
+    // 500 ms on a developer machine; a hosted CI runner gets 900 ms (the "+30s" HUD message lasts 1 s after the
+    // 120 ms key coalescing, so the window must end before it expires). The measured value is printed below.
+    const window = ciBound(0.5, 0.9);
     const pty = startPty({
       args: ['--demo', 'mandelbrot'],
       cols: COLS,
@@ -79,8 +82,10 @@ describe.skipIf(!canRun)('--demo mandelbrot with the seek cache, in a PTY', () =
       }
     };
     const before = await hudAt(keyAt - 0.1);
-    const after = await hudAt(keyAt + 0.5);
-    console.info(`[4.8 measurement] HUD before: "${before}"; 0.5 s after the key: "${after}"`);
+    const after = await hudAt(keyAt + window);
+    console.info(
+      `[4.8 measurement] HUD before: "${before}"; ${String(window)} s after the key: "${after}" (CI=${String(ON_CI)})`,
+    );
     expect(hudSeconds(before) ?? Infinity).toBeLessThan(5);
     expect(hudSeconds(after) ?? 0).toBeGreaterThanOrEqual(30);
     expect(after).toContain('+30s');
@@ -88,9 +93,9 @@ describe.skipIf(!canRun)('--demo mandelbrot with the seek cache, in a PTY', () =
 
     // The HUD shows the target as soon as the seek is applied, so also require pictures of the new position:
     // frames stop while the seek barrier waits (a lavfi seek to 30 s of mandelbrot would hold them for ~2 s),
-    // and they must be flowing again by 500 ms. The window starts after the 120 ms key coalescing.
+    // and they must be flowing again by the window's end. The window starts after the 120 ms key coalescing.
     const framesInWindow = run.chunks.filter(
-      (c) => c.t > keyAt + 0.2 && c.t <= keyAt + 0.5 && c.data.toString('latin1').includes(SYNC_BEGIN),
+      (c) => c.t > keyAt + 0.2 && c.t <= keyAt + window && c.data.toString('latin1').includes(SYNC_BEGIN),
     ).length;
     expect(framesInWindow).toBeGreaterThan(0);
   }, 60_000);

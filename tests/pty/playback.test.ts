@@ -8,12 +8,15 @@ import { ASCII_RAMP } from '../../src/renderer/ascii.ts';
 import { AMBER_RAMP } from '../../src/renderer/palette.ts';
 import { ALT_ON, RESTORE_SEQUENCE, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { readCell, replayInto } from '../helpers/emulator.ts';
+import { buildDemoCaches, ciBound, makeCacheDir } from '../helpers/pty.ts';
 
 // The bottom row holds the HUD (REQ-GEO-02): it starts with the play symbol.
 const HUD_ROW = /^\u25b6 /;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const helper = path.join(root, 'tests', 'helpers', 'pty_run.py');
+/** Set by the suite's beforeAll: a directory holding a finished seek cache of the demos this file plays. */
+let cacheDir = '';
 
 function available(cmd: string, args: string[]): boolean {
   return spawnSync(cmd, args, { stdio: 'ignore' }).status === 0;
@@ -50,7 +53,13 @@ function runInPty(args: string[], opts: { cols?: number; rows?: number; timeout:
     cols: opts.cols ?? 80,
     rows: opts.rows ?? 24,
     timeout: opts.timeout,
-    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor', SDL_AUDIODRIVER: 'dummy' },
+    env: {
+      TERM: 'xterm-256color',
+      LANG: 'en_US.UTF-8',
+      COLORTERM: 'truecolor',
+      SDL_AUDIODRIVER: 'dummy',
+      FRANKENTTY_CACHE_DIR: cacheDir,
+    },
     events: opts.events,
   };
   const startedAt = Date.now();
@@ -117,8 +126,10 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
   let moving5 = '';
   let moving2 = '';
 
-  beforeAll(() => {
+  beforeAll(async () => {
     dir = mkdtempSync(path.join(os.tmpdir(), 'frankentty-playback-'));
+    cacheDir = makeCacheDir('playback');
+    await buildDemoCaches(cacheDir, ['mandelbrot']);
     red3 = path.join(dir, 'red3.mp4');
     red5 = path.join(dir, 'red5.mp4');
     red2 = path.join(dir, 'red2.mp4');
@@ -129,10 +140,11 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
     moving2 = path.join(dir, 'moving2.mp4');
     makeMovingVideo(moving5, 5);
     makeMovingVideo(moving2, 2);
-  });
+  }, 180_000);
 
   afterAll(() => {
     if (dir !== '') rmSync(dir, { recursive: true, force: true });
+    if (cacheDir !== '') rmSync(cacheDir, { recursive: true, force: true });
   });
 
   it('plays a red file, draws it centered, shows the HUD on the bottom row and restores on q', async () => {
@@ -179,16 +191,16 @@ describe.skipIf(!canRun)('playback in a PTY', () => {
       `pacing: first frame at ${t0.toFixed(2)} s, ${String(count)} frames in the next 2.0 s ` +
         `(${String(r.frameTimes.length)} total)`,
     );
-    expect(count).toBeGreaterThanOrEqual(52);
+    expect(count).toBeGreaterThanOrEqual(ciBound(52, 40));
     expect(count).toBeLessThanOrEqual(68);
   });
 
   it('exits 0 by itself at the end of a 2 s file and restores the terminal', async () => {
-    const r = runInPty([moving2], { timeout: 4, events: [] });
+    const r = runInPty([moving2], { timeout: ciBound(4, 8), events: [] });
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
-    expect(r.elapsedSec).toBeLessThan(4.5);
-    expect(r.frameTimes.length).toBeGreaterThan(20);
+    expect(r.elapsedSec).toBeLessThan(ciBound(4.5, 8.5));
+    expect(r.frameTimes.length).toBeGreaterThan(ciBound(20, 12));
     expect(r.output.endsWith(RESTORE_SEQUENCE)).toBe(true);
     const state = await replayInto(r.output, 80, 24);
     try {

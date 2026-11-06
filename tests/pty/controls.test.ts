@@ -2,10 +2,11 @@
 // Audio runs through SDL's dummy driver (set by tests/helpers/pty.ts), so these runs are silent.
 
 import { spawnSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { rmSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ASCII_RAMP } from '../../src/renderer/ascii.ts';
 import { RESTORE_SEQUENCE } from '../../src/renderer/sequences.ts';
-import { hex, hudSeconds, isAlive, playerChildren, rowText, screenAt, startPty } from '../helpers/pty.ts';
+import { buildDemoCaches, hex, hudSeconds, isAlive, makeCacheDir, playerChildren, rowText, screenAt, startPty } from '../helpers/pty.ts';
 import type { PtyRun } from '../helpers/pty.ts';
 import { replayInto } from '../helpers/emulator.ts';
 import { sleep, waitFor } from '../helpers/player-fakes.ts';
@@ -37,10 +38,24 @@ async function endsRestored(run: PtyRun): Promise<void> {
 }
 
 describe.skipIf(!canRun)('player controls in a PTY', () => {
+  // Every run uses a pre-built seek cache in its own directory: no background render competes for the CPU, and no
+  // "seek cache ready" HUD message can show up in the middle of a run.
+  let cacheDir = '';
+
+  beforeAll(async () => {
+    cacheDir = makeCacheDir('controls');
+    await buildDemoCaches(cacheDir, ['testsrc2', 'life']);
+  }, 180_000);
+
+  afterAll(() => {
+    if (cacheDir !== '') rmSync(cacheDir, { recursive: true, force: true });
+  });
+
   it('--demo testsrc2 with audio: seek, pause, resume and quit; no child process is left', async () => {
     const pty = startPty({
       args: ['--demo', 'testsrc2', '--av-offset', '0'],
       timeout: 25,
+      env: { FRANKENTTY_CACHE_DIR: cacheDir },
       events: [
         { at: 2.0, hex: hex('\x1b[C') }, // Right: +5 s
         { at: 3.5, hex: hex(' ') }, // pause
@@ -139,6 +154,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     const pty = startPty({
       args: ['--demo', 'testsrc2', '--no-audio'],
       timeout: 20,
+      env: { FRANKENTTY_CACHE_DIR: cacheDir },
       events: [
         { at: 2.0, hex: hex('m') },
         { at: 3.0, hex: hex('m') },
@@ -199,6 +215,7 @@ describe.skipIf(!canRun)('player controls in a PTY', () => {
     const pty = startPty({
       args: ['--demo', 'life'],
       timeout: 20,
+      env: { FRANKENTTY_CACHE_DIR: cacheDir },
       events: [{ at: 3.0, signal: 'SIGTERM' }],
     });
     const seen = new Map<number, string>();

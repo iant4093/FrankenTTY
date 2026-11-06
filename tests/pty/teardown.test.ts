@@ -1,12 +1,16 @@
 import { spawnSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RESTORE_SEQUENCE, SYNC_BEGIN } from '../../src/renderer/sequences.ts';
 import { replay } from '../helpers/emulator.ts';
+import { buildDemoCaches, makeCacheDir } from '../helpers/pty.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const helper = path.join(root, 'tests', 'helpers', 'pty_run.py');
+/** Set by the suite's beforeAll: a finished seek cache of the default demo, so no background render runs. */
+let cacheDir = '';
 
 function available(cmd: string, args: string[]): boolean {
   return spawnSync(cmd, args, { stdio: 'ignore' }).status === 0;
@@ -37,7 +41,13 @@ function runInPty(event: { hex: string } | { signal: string }): PtyResult {
     cols: COLS,
     rows: ROWS,
     timeout: 15,
-    env: { TERM: 'xterm-256color', LANG: 'en_US.UTF-8', COLORTERM: 'truecolor', SDL_AUDIODRIVER: 'dummy' },
+    env: {
+      TERM: 'xterm-256color',
+      LANG: 'en_US.UTF-8',
+      COLORTERM: 'truecolor',
+      SDL_AUDIODRIVER: 'dummy',
+      FRANKENTTY_CACHE_DIR: cacheDir,
+    },
     events: [{ at: INPUT_AT, ...event }],
   };
   const run = spawnSync('python3', [helper, JSON.stringify(spec)], {
@@ -63,6 +73,14 @@ async function expectCleanTerminal(output: string): Promise<void> {
 }
 
 describe.skipIf(!canRun)('terminal teardown in a PTY', () => {
+  beforeAll(async () => {
+    cacheDir = makeCacheDir('teardown');
+    await buildDemoCaches(cacheDir, ['mandelbrot']);
+  }, 180_000);
+
+  afterAll(() => {
+    if (cacheDir !== '') rmSync(cacheDir, { recursive: true, force: true });
+  });
   it("'q' exits 0 and restores the terminal", async () => {
     const r = runInPty({ hex: '71' });
     expect(r.timedOut).toBe(false);

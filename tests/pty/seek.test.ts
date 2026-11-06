@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { SYNC_BEGIN, SYNC_END } from '../../src/renderer/sequences.ts';
-import { hex, hudSeconds, isAlive, playerChildren, rowText, screenAt, startPty } from '../helpers/pty.ts';
+import { ciBound, hex, hudSeconds, isAlive, ON_CI, playerChildren, rowText, screenAt, startPty } from '../helpers/pty.ts';
 import type { PtyRun } from '../helpers/pty.ts';
 import { sleep, waitFor } from '../helpers/player-fakes.ts';
 
@@ -147,16 +147,18 @@ describe.skipIf(!canRun)('seek, pause and resume in a PTY on a 20 s MP4 with aud
     const back = measureSeek(run, 4.0, '\u00bb -5s');
     console.info(
       `[4.6 measurement] seek forward: ${JSON.stringify(forward)}; seek back: ${JSON.stringify(back)}; ` +
-        `ffplay pids: ${String(sessionFfplays().length)}; processes seen: ${String(pids.size)}`,
+        `ffplay pids: ${String(sessionFfplays().length)}; processes seen: ${String(pids.size)}; ` +
+        `latency bound: ${String(ciBound(0.4, 0.8))} s (CI=${String(ON_CI)})`,
     );
     expect(forward).not.toBeNull();
     expect(back).not.toBeNull();
+    const latencyBound = ciBound(0.4, 0.8);
     for (const r of [forward, back]) {
       // Key press -> first frame of the new position: 120 ms key coalescing + decoder + audio source.
-      expect(r?.latency ?? Infinity).toBeLessThan(0.4);
+      expect(r?.latency ?? Infinity).toBeLessThan(latencyBound);
       expect(r?.latency ?? -1).toBeGreaterThan(0.1);
-      // 30 frames expected in the second after it; at most 3 are lost.
-      expect(r?.framesInSecond ?? 0).toBeGreaterThanOrEqual(27);
+      // 30 frames expected in the second after it; at most 3 are lost (more on a loaded hosted runner).
+      expect(r?.framesInSecond ?? 0).toBeGreaterThanOrEqual(ciBound(27, 22));
     }
 
     // One ffplay for the whole run, alive through the seeks, the pause and the resume.

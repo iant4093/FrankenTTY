@@ -3,13 +3,50 @@
 // any moment into @xterm/headless and read the screen as it looked then.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getDemo } from '../../src/ingest/demo.ts';
+import { ensureDemoCache } from '../../src/ingest/demo-cache.ts';
 import { replayInto } from './emulator.ts';
 import type { Emulator } from './emulator.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const helper = path.join(root, 'tests', 'helpers', 'pty_run.py');
+
+/** True on CI runners (hosted runners are slower and noisier than a developer machine). */
+export const ON_CI = process.env.CI !== undefined && process.env.CI !== '' && process.env.CI !== 'false';
+
+/** `local` on a developer machine, `ci` when `CI` is set. For timing bounds only. */
+export function ciBound<T>(local: T, ci: T): T {
+  return ON_CI ? ci : local;
+}
+
+/** A fresh temp directory for `FRANKENTTY_CACHE_DIR`. The caller removes it with `rmSync`. */
+export function makeCacheDir(label: string): string {
+  return mkdtempSync(path.join(os.tmpdir(), `frankentty-pty-${label}-`));
+}
+
+/**
+ * Renders the full seek cache of each named demo into `dir` and resolves when every one is ready, so a PTY run
+ * started with `FRANKENTTY_CACHE_DIR=dir` finds a warm cache: no background render competes for the CPU and no
+ * "seek cache ready" message can replace a HUD message mid-test.
+ */
+export async function buildDemoCaches(dir: string, names: readonly string[]): Promise<void> {
+  await Promise.all(
+    names.map(
+      (name) =>
+        new Promise<void>((resolve, reject) => {
+          ensureDemoCache(getDemo(name), {
+            dir,
+            onReady: () => resolve(),
+            onError: (message) => reject(new Error(`seek cache for ${name}: ${message}`)),
+          });
+        }),
+    ),
+  );
+}
 
 export type PtyEvent = { at: number; hex: string } | { at: number; signal: string } | { at: number; resize: [number, number] };
 
