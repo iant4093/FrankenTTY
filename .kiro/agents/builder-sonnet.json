@@ -23,7 +23,8 @@
         "scripts/**",
         "src/**",
         "tests/**",
-        "tools/**"
+        "tools/**",
+        "video/**"
       ],
       "deniedPaths": [
         ".kiro/**",
@@ -82,7 +83,8 @@
           "scripts/**",
           "assets/**",
           "tools/**",
-          "docs/screenshots/**"
+          "docs/screenshots/**",
+          "video/**"
         ],
         "effect": "allow"
       },

@@ -23,3 +23,9 @@ spikes/**/dist/
 .DS_Store
 
 # NOTE: .kiro/ is a hackathon deliverable and must stay tracked. Never ignore it.
+
+# Demo video build outputs
+video/build/
+video/output/
+video/remotion/node_modules/
+video/remotion/out/

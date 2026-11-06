@@ -36,6 +36,7 @@ docs/                     PLAN, GAP_ANALYSIS, EVIDENCE, HANDOFF, screenshots/
 spikes/                   Throwaway experiments; never imported by src/
 tools/                    Dev tooling (MCP server for the vt100-video Power); never imported by src/, not shipped
 powers/                   Kiro Powers (plugin.json, skills, mcp.json)
+video/                    Demo video: script, Remotion project, narration, sessions (builds to video/build/, gitignored)
 ```
 
 ## Module boundaries

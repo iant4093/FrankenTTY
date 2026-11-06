@@ -259,4 +259,11 @@ jobs:
             exit 0
           fi
           mkdir -p dist && cp release/frankentty.cjs dist/frankentty.cjs && chmod 755 dist/frankentty.cjs
-          npm publish --provenance --access public --ignore-scripts
+          # A trusted publisher can be limited to staged publishing. Then a direct publish is rejected and the
+          # version is staged instead, waiting for a maintainer's approval on npmjs.com.
+          if npm publish --provenance --access public --ignore-scripts; then
+            echo "Published frankentty@$VERSION."
+          else
+            echo "::warning::Direct publish was rejected; staging frankentty@$VERSION for approval on npmjs.com instead."
+            npm stage publish --provenance --access public --ignore-scripts
+          fi
