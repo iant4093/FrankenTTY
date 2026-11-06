@@ -146,12 +146,13 @@ describe('frankentty MCP server: protocol', () => {
     expect(reply.id).toBeGreaterThan(0);
   });
 
-  it('tools/list returns the four tools with object schemas', async () => {
+  it('tools/list returns the five tools with object schemas', async () => {
     const reply = await client.request('tools/list');
     const tools = reply.result?.['tools'] as { name: string; description: string; inputSchema: Record<string, unknown> }[];
     expect(tools.map((t) => t.name).sort()).toEqual([
       'frankentty_bench',
       'frankentty_probe_media',
+      'frankentty_record_session',
       'frankentty_render_snapshot',
       'frankentty_terminal_caps',
     ]);

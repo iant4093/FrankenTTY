@@ -8,6 +8,7 @@
 
 import { statSync } from 'node:fs';
 import { release } from 'node:os';
+import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import tty from 'node:tty';
 import xterm from '@xterm/headless';
@@ -32,6 +33,18 @@ import { createMapper } from '../../src/renderer/color-depth.ts';
 import { DEFAULT_CELL_ASPECT, DEFAULT_HUD_ROWS, computeGeometry } from '../../src/renderer/geometry.ts';
 import { AUTOWRAP_OFF } from '../../src/renderer/sequences.ts';
 import { detectColorDepth, detectUnicode } from '../../src/term/capabilities.ts';
+import {
+  LIMITS,
+  REPO_ROOT,
+  RecordError,
+  SESSIONS_DIR,
+  SceneError,
+  killAllRecordings,
+  recordSession,
+  writeSession,
+} from '../session-recorder/record.ts';
+import type { SceneSpec, SessionEvent } from '../session-recorder/record.ts';
+import { SCENE_NAMES, getScene } from '../session-recorder/scenes.ts';
 
 // ---------------------------------------------------------------------------
 // Errors and result types
@@ -67,7 +80,7 @@ interface ToolOutput {
 // ---------------------------------------------------------------------------
 
 export interface Schema {
-  type: 'object' | 'string' | 'number' | 'integer' | 'boolean';
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
   description?: string;
   enum?: readonly string[];
   minimum?: number;
@@ -80,6 +93,9 @@ export interface Schema {
   required?: readonly string[];
   additionalProperties?: boolean | Schema;
   maxProperties?: number;
+  items?: Schema;
+  minItems?: number;
+  maxItems?: number;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -108,6 +124,22 @@ export function validateValue(value: unknown, schema: Schema, path: string): str
           return `${path}.${key} is not an accepted argument`;
         } else if (schema.additionalProperties !== true) {
           const err = validateValue(value[key], schema.additionalProperties, `${path}.${key}`);
+          if (err !== null) return err;
+        }
+      }
+      return null;
+    }
+    case 'array': {
+      if (!Array.isArray(value)) return `${path} must be an array`;
+      if (schema.minItems !== undefined && value.length < schema.minItems) {
+        return `${path} needs at least ${String(schema.minItems)} items`;
+      }
+      if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+        return `${path} has more than ${String(schema.maxItems)} items`;
+      }
+      if (schema.items !== undefined) {
+        for (const [i, item] of value.entries()) {
+          const err = validateValue(item, schema.items, `${path}[${String(i)}]`);
           if (err !== null) return err;
         }
       }
@@ -296,6 +328,7 @@ const liveDecoders = new Set<Decoder>();
 /** Synchronously kills every decoder a snapshot has running. For shutdown paths. */
 export function killAllChildren(): void {
   for (const decoder of liveDecoders) decoder.killNow();
+  killAllRecordings();
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +568,120 @@ async function capsTool(args: Args): Promise<ToolOutput> {
 }
 
 // ---------------------------------------------------------------------------
+// Tool 5: frankentty_record_session
+// ---------------------------------------------------------------------------
+
+/** Session files may only go under video/ (never over package.json or source). */
+const VIDEO_DIR = path.join(REPO_ROOT, 'video');
+
+function sessionOutputPath(args: Args, name: string): string {
+  const given = str(args, 'path');
+  if (given === undefined) return path.join(SESSIONS_DIR, `${name}.json`);
+  const resolved = path.resolve(REPO_ROOT, given);
+  const rel = path.relative(VIDEO_DIR, resolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel) || !resolved.endsWith('.json')) {
+    throw new ArgError('path must be a .json file inside the repository video/ folder');
+  }
+  return resolved;
+}
+
+function customScene(raw: Args): SceneSpec {
+  const events: SessionEvent[] = [];
+  for (const e of raw['events'] as Args[]) {
+    const event: SessionEvent = { t: e['t'] as number, keys: str(e, 'keys') ?? '', label: str(e, 'label') ?? '' };
+    const resize = e['resize'];
+    if (Array.isArray(resize)) event.resize = [resize[0] as number, resize[1] as number];
+    events.push(event);
+  }
+  const name = str(raw, 'name') ?? '';
+  return {
+    name,
+    title: str(raw, 'title') ?? name,
+    command: raw['command'] as string[],
+    cols: raw['cols'] as number,
+    rows: raw['rows'] as number,
+    durationSec: raw['durationSec'] as number,
+    events,
+  };
+}
+
+async function recordTool(args: Args): Promise<ToolOutput> {
+  const sceneName = str(args, 'scene');
+  const custom = args['custom'];
+  if ((sceneName === undefined) === (custom === undefined)) throw new ArgError('give exactly one of scene or custom');
+  let scene: SceneSpec;
+  try {
+    scene = sceneName !== undefined ? getScene(sceneName) : customScene(custom as Args);
+    const target = sessionOutputPath(args, scene.name);
+    const session = await recordSession(scene);
+    const written = writeSession(session, target);
+    const result = {
+      path: path.relative(REPO_ROOT, written.path),
+      durationSec: session.durationSec,
+      chunks: written.chunks,
+      bytes: written.bytes,
+      fileBytes: written.fileBytes,
+      gzipped: written.gzipped,
+    };
+    return { text: JSON.stringify(result), structured: result };
+  } catch (err) {
+    if (err instanceof SceneError) throw new ArgError(err.message);
+    if (err instanceof RecordError) throw new ToolFailure(firstLine(err.message));
+    throw err;
+  }
+}
+
+const recordEventSchema: Schema = {
+  type: 'object',
+  properties: {
+    t: { type: 'number', minimum: 0, maximum: LIMITS.maxDurationSec, description: 'Seconds since the program started.' },
+    keys: {
+      type: 'string',
+      maxLength: LIMITS.maxKeysLength,
+      description: 'Raw key bytes, e.g. "m" or "\\u001b[C" (Right). Empty for a resize.',
+    },
+    label: { type: 'string', maxLength: LIMITS.maxLabelLength },
+    resize: {
+      type: 'array',
+      items: { type: 'integer', minimum: LIMITS.minCols, maximum: LIMITS.maxCols },
+      minItems: 2,
+      maxItems: 2,
+      description: 'New size [cols, rows] (rows 5-100) instead of keys.',
+    },
+  },
+  required: ['t'],
+  additionalProperties: false,
+};
+
+const recordCustomSchema: Schema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,39}$', description: 'File name stem, lowercase letters, digits, dashes.' },
+    title: { type: 'string', maxLength: LIMITS.maxTitleLength },
+    command: {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 4096 },
+      minItems: 1,
+      maxItems: 24,
+      description:
+        'Arguments after "frankentty": "--demo [name]" or a local file, plus --mode, --palette, --color, --quality, ' +
+        '--fps, --threshold, --cell-aspect, --av-offset, --no-audio.',
+    },
+    cols: { type: 'integer', minimum: LIMITS.minCols, maximum: LIMITS.maxCols },
+    rows: { type: 'integer', minimum: LIMITS.minRows, maximum: LIMITS.maxRows },
+    durationSec: {
+      type: 'number',
+      minimum: LIMITS.minDurationSec,
+      maximum: LIMITS.maxDurationSec,
+      description: 'Planned length. A "q" is added at this time unless the events already quit.',
+    },
+    events: { type: 'array', items: recordEventSchema, maxItems: LIMITS.maxEvents },
+  },
+  required: ['name', 'command', 'cols', 'rows', 'durationSec', 'events'],
+  additionalProperties: false,
+};
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
@@ -638,6 +785,28 @@ export const TOOLS: readonly ToolDef[] = [
       additionalProperties: false,
     },
     run: capsTool,
+  },
+  {
+    name: 'frankentty_record_session',
+    description:
+      'Run the real FrankenTTY player (node src/main.ts) in a PTY with timed keys and resizes, and save every byte it ' +
+      'wrote, with timestamps, as a session JSON under video/ (default video/sessions/<name>.json; gzipped to .json.gz ' +
+      'above 5 MB). Give a ready-made scene or a custom one; only --demo or a local file may be played. Takes as long ' +
+      'as the session (up to 120 s). Needs ffmpeg and python3 on PATH.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scene: { type: 'string', enum: SCENE_NAMES, description: 'A scene from video/script.md. Give exactly one of scene or custom.' },
+        custom: recordCustomSchema,
+        path: {
+          type: 'string',
+          maxLength: 512,
+          description: 'Output .json path inside the repository video/ folder (default video/sessions/<name>.json).',
+        },
+      },
+      additionalProperties: false,
+    },
+    run: recordTool,
   },
 ];
 
