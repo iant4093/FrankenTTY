@@ -86,3 +86,177 @@ jobs:
           path: build/logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  build:
+    name: Release build (all targets)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build single executables, archives and checksums
+        run: bash scripts/build-release.sh --targets all
+      - name: Upload release candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-candidate
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-build-logs
+          path: build/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  smoke:
+    name: Smoke (${{ matrix.asset }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-latest, asset: frankentty-macos-arm64.tar.gz, bin: frankentty }
+          - { runner: macos-26-intel, asset: frankentty-macos-x64.tar.gz, bin: frankentty }
+          - { runner: ubuntu-latest, asset: frankentty-linux-x64.tar.gz, bin: frankentty }
+          - { runner: ubuntu-24.04-arm, asset: frankentty-linux-arm64.tar.gz, bin: frankentty }
+          - { runner: windows-latest, asset: frankentty-windows-x64.zip, bin: frankentty.exe }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-candidate
+          path: release
+      - name: Verify checksum, unpack and run
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+          BIN: ${{ matrix.bin }}
+        run: |
+          cd release
+          if command -v sha256sum >/dev/null; then grep " ${ASSET}\$" SHA256SUMS | sha256sum --check; else grep " ${ASSET}\$" SHA256SUMS | shasum -a 256 --check; fi
+          mkdir -p unpacked
+          case "$ASSET" in
+            *.zip) unzip -q "$ASSET" -d unpacked ;;
+            *) tar -xzf "$ASSET" -C unpacked ;;
+          esac
+          ./unpacked/"$BIN" --version
+          ./unpacked/"$BIN" --help | head -3
+          # No TTY here: the player must refuse cleanly with exit 1.
+          set +e; ./unpacked/"$BIN" --demo < /dev/null; code=$?; set -e
+          test "$code" -eq 1
+
+  install-test:
+    name: Installer (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-candidate
+          path: release
+      - name: install.sh from the release candidate
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          base="file://$PWD/release"
+          FRANKENTTY_RELEASE_BASE="$base" FRANKENTTY_INSTALL_DIR="$RUNNER_TEMP/bin" sh release/install.sh --no-ffmpeg
+          "$RUNNER_TEMP/bin/frankentty" --version
+      - name: install.ps1 from the release candidate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:FRANKENTTY_RELEASE_BASE = "file:///" + ((Resolve-Path release).Path -replace '\\','/')
+          $env:FRANKENTTY_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'frankentty'
+          $env:FRANKENTTY_NO_FFMPEG = '1'
+          & ./release/install.ps1
+          & (Join-Path $env:FRANKENTTY_INSTALL_DIR 'frankentty.exe') --version
+
+  release:
+    name: Publish release
+    needs: [quality, test, build, smoke, install-test]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-candidate
+          path: release
+      - name: Verify checksums
+        run: cd release && sha256sum --check SHA256SUMS
+      - name: Decide whether this version is new
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          head_sha="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)"
+          if [ "$head_sha" != "$GITHUB_SHA" ]; then
+            echo 'A newer commit is on main; its run will publish instead.'
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif gh release view "v$version" > /dev/null 2>&1; then
+            echo "v$version is already released; bump package.json version to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Attest release artifacts
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release/*
+      - name: Publish GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "FrankenTTY v$VERSION" --latest \
+            --notes "Built from $GITHUB_SHA after compliance, workflow security, typecheck, lint and the full test suite on macOS, Linux and Windows, plus smoke and installer tests on every target. Install: see the README. Binaries are unsigned (macOS ad-hoc signed); checksums and build provenance are attached." \
+            release/*
+      - name: Publish to npm (trusted publishing)
+        if: steps.version.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! npm view frankentty version > /dev/null 2>&1; then
+            echo "::notice::frankentty is not on npm yet. The first publish is manual (docs/PLAN.md 9.1); skipping."
+            exit 0
+          fi
+          if npm view "frankentty@$VERSION" version > /dev/null 2>&1; then
+            echo "frankentty@$VERSION is already on npm."
+            exit 0
+          fi
+          mkdir -p dist && cp release/frankentty.cjs dist/frankentty.cjs && chmod 755 dist/frankentty.cjs
+          npm publish --provenance --access public --ignore-scripts
