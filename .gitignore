@@ -29,3 +29,6 @@ video/build/
 video/output/
 video/remotion/node_modules/
 video/remotion/out/
+# Generated: recorded PTY sessions (tens of MB) and Remotion fixtures; video/build.sh recreates them
+video/sessions/
+video/remotion/fixtures/
