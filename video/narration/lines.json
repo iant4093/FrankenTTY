@@ -1,0 +1,34 @@
+{
+  "source": "video/script.md, Narration blocks. Text is verbatim; whitespace is normalized to single spaces.",
+  "acts": {
+    "act1": [
+      { "id": "act1-01", "text": "This is a plain terminal. No browser, no GPU window, just text." },
+      { "id": "act1-02", "text": "FrankenTTY welds FFmpeg's modern video pipeline to the VT100 escape codes from the 1970s." },
+      { "id": "act1-03", "text": "Every frame you see is characters and color codes, streamed with sound." }
+    ],
+    "act2": [
+      { "id": "act2-01", "text": "One character cell holds two pixels: the half block's foreground is the top, its background the bottom." },
+      { "id": "act2-02", "text": "The catch is speed." },
+      { "id": "act2-03", "text": "We measured Apple Terminal taking in only about two and a half megabytes a second, and the real cost is color changes, not bytes." },
+      { "id": "act2-04", "text": "So the encoder remembers what is already on screen, sends only changes, and reuses colors." },
+      { "id": "act2-05", "text": "That cuts color codes by fifty-two to ninety-four percent, depending on the picture." }
+    ],
+    "act3": [
+      { "id": "act3-01", "text": "Here it is live." },
+      { "id": "act3-02", "text": "M switches between half blocks, ASCII and Braille." },
+      { "id": "act3-03", "text": "C cycles CRT palettes: amber, green phosphor, and a four-shade handheld look." },
+      { "id": "act3-04", "text": "Seeking takes about a fifth of a second, and the sound comes back with the picture." },
+      { "id": "act3-05", "text": "When the window grows past what the terminal can draw, a quality governor steps in: it merges close colors, then drops to 256 colors, then draws fewer cells." },
+      { "id": "act3-06", "text": "Press q, and the terminal is exactly as you left it." }
+    ],
+    "act4": [
+      { "id": "act4-01", "text": "FrankenTTY was built in Kiro by two agents." },
+      { "id": "act4-02", "text": "Claude Opus 5.5 wrote the EARS specs, steering and task briefs, and reviewed every change." },
+      { "id": "act4-03", "text": "Claude Sonnet 5.5 built each brief, often three at once in separate git worktrees." },
+      { "id": "act4-04", "text": "Hooks ran the tests after every write and refused to end a turn until the suite was green." },
+      { "id": "act4-05", "text": "Property-based tests caught two mistakes in the spec itself, and a clock bug." },
+      { "id": "act4-06", "text": "A Kiro Power gives agents an MCP tool that renders a frame through a real terminal emulator." },
+      { "id": "act4-07", "text": "CI builds for five platforms, and one command installs it." }
+    ]
+  }
+}
