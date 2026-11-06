@@ -145,7 +145,7 @@ jobs:
           BIN: ${{ matrix.bin }}
         run: |
           cd release
-          if command -v sha256sum >/dev/null; then grep " ${ASSET}\$" SHA256SUMS | sha256sum --check; else grep " ${ASSET}\$" SHA256SUMS | shasum -a 256 --check; fi
+          if command -v shasum >/dev/null; then grep " ${ASSET}\$" SHA256SUMS | shasum -a 256 -c; else grep " ${ASSET}\$" SHA256SUMS | sha256sum -c; fi
           mkdir -p unpacked
           case "$ASSET" in
             *.zip) unzip -q "$ASSET" -d unpacked ;;
